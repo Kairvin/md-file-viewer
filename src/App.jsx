@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import MarkdownViewer from './components/MarkdownViewer';
 import MarkdownEditor from './components/MarkdownEditor';
 import TableOfContents from './components/TableOfContents';
+import FileSidebar from './components/FileSidebar';
 import { parseMarkdown } from './utils/markdownParser';
 import { SAMPLE_MARKDOWN } from './utils/sampleDocument';
 import { printToPdf, downloadDirectPdf, downloadMarkdown, downloadHtml } from './utils/pdfExport';
@@ -85,11 +86,67 @@ The user interface should prioritize readable font sizes, clean margins, and cle
 - [ ] Package standalone portable version for macOS
 `;
 
+const DEFAULT_FILES = [
+  {
+    id: 'sample-showcase',
+    name: 'Showcase.md',
+    content: SAMPLE_MARKDOWN,
+    createdAt: Date.now() - 3600000 * 2,
+    updatedAt: Date.now() - 3600000 * 2,
+  },
+  {
+    id: 'sample-tech',
+    name: 'Technical-Architecture.md',
+    content: TECH_TEMPLATE,
+    createdAt: Date.now() - 3600000 * 5,
+    updatedAt: Date.now() - 3600000 * 5,
+  },
+  {
+    id: 'sample-notes',
+    name: 'Meeting-Notes.md',
+    content: NOTES_TEMPLATE,
+    createdAt: Date.now() - 3600000 * 24,
+    updatedAt: Date.now() - 3600000 * 24,
+  }
+];
+
 export default function App() {
-  const [content, setContent] = useState(() => {
-    return localStorage.getItem('md_preview_content') || SAMPLE_MARKDOWN;
+  // Multi-file library state
+  const [files, setFiles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('md_files_library');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Error reading md_files_library:', e);
+    }
+    // Backward compatibility: preserve existing custom markdown if any
+    const legacyContent = localStorage.getItem('md_preview_content');
+    if (legacyContent && legacyContent.trim() && legacyContent !== SAMPLE_MARKDOWN) {
+      return [
+        {
+          id: 'file-migrated-1',
+          name: 'My-Document.md',
+          content: legacyContent,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        ...DEFAULT_FILES,
+      ];
+    }
+    return DEFAULT_FILES;
   });
-  const [fileName, setFileName] = useState('Showcase.md');
+
+  const [activeFileId, setActiveFileId] = useState(() => {
+    return localStorage.getItem('md_active_file_id') || 'sample-showcase';
+  });
+
+  const [showFileSidebar, setShowFileSidebar] = useState(() => {
+    return typeof window !== 'undefined' && window.innerWidth >= 1024;
+  });
+
   const [viewMode, setViewMode] = useState(() => {
     return (typeof window !== 'undefined' && window.innerWidth < 768) ? 'preview' : 'split';
   });
@@ -104,18 +161,40 @@ export default function App() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [hasPlaygroundEdits, setHasPlaygroundEdits] = useState(false);
 
-  // Automatically adapt view mode on mobile screens
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768 && viewMode === 'split') {
-        setViewMode('preview');
-      }
+  // Active file derived from state
+  const activeFile = useMemo(() => {
+    return files.find(f => f.id === activeFileId) || files[0] || {
+      id: 'default',
+      name: 'Untitled.md',
+      content: '',
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [viewMode]);
+  }, [files, activeFileId]);
 
-  // Sync content to localStorage
+  const content = activeFile.content;
+  const fileName = activeFile.name;
+
+  // Make sure activeFileId tracks a valid file
+  useEffect(() => {
+    if (activeFile && activeFile.id !== activeFileId) {
+      setActiveFileId(activeFile.id);
+    }
+  }, [activeFile, activeFileId]);
+
+  // Sync files library to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('md_files_library', JSON.stringify(files));
+    } catch (e) {
+      console.error('Failed to sync md_files_library:', e);
+    }
+  }, [files]);
+
+  // Sync active file ID to localStorage
+  useEffect(() => {
+    localStorage.setItem('md_active_file_id', activeFileId);
+  }, [activeFileId]);
+
+  // Sync content to localStorage for backward compatibility
   useEffect(() => {
     localStorage.setItem('md_preview_content', content);
   }, [content]);
@@ -135,6 +214,17 @@ export default function App() {
       root.classList.remove('dark');
     }
   }, [theme]);
+
+  // Automatically adapt view mode on mobile screens
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && viewMode === 'split') {
+        setViewMode('preview');
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [viewMode]);
 
   // Parse markdown into HTML, TOC, and Stats
   const { html, toc, stats } = useMemo(() => {
@@ -159,7 +249,12 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Toggle fullscreen with F or F11 (when not typing in textarea)
+      // Toggle sidebar with Cmd/Ctrl + B
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        setShowFileSidebar(prev => !prev);
+      }
+      // Toggle fullscreen with F or F11 (when not typing in textarea or input)
       if ((e.key === 'F' || e.key === 'f') && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') {
         e.preventDefault();
         toggleFullscreen();
@@ -195,16 +290,84 @@ export default function App() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, [isFullscreen]);
 
-  // Action handlers
+  // File mutations
+  const handleContentChange = useCallback((newText) => {
+    setFiles(prev => prev.map(f => f.id === activeFile.id ? { ...f, content: newText, updatedAt: Date.now() } : f));
+  }, [activeFile.id]);
+
+  const handleFileNameChange = useCallback((newName) => {
+    setFiles(prev => prev.map(f => f.id === activeFile.id ? { ...f, name: newName, updatedAt: Date.now() } : f));
+  }, [activeFile.id]);
+
+  const handleSelectFile = (fileId) => {
+    if (fileId === activeFile.id) return;
+    if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you switch files. Do you wish to proceed?')) {
+      return;
+    }
+    setHasPlaygroundEdits(false);
+    setActiveFileId(fileId);
+  };
+
   const handleNewFile = () => {
     if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you proceed. Do you wish to proceed?')) {
       return;
     }
-    if (confirm('Create a new blank document? Any unsaved edits will be cleared.')) {
-      setContent('# Untitled Document\n\nStart typing your markdown here...');
-      setFileName('Untitled.md');
+    const id = `file-${Date.now()}`;
+    const count = files.filter(f => f.name.toLowerCase().startsWith('untitled')).length;
+    const newName = count === 0 ? 'Untitled.md' : `Untitled-${count + 1}.md`;
+    const initialContent = `# ${newName.replace(/\.md$/, '')}\n\nStart typing your markdown here...`;
+
+    const newDoc = {
+      id,
+      name: newName,
+      content: initialContent,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    setFiles(prev => [newDoc, ...prev]);
+    setActiveFileId(id);
+    setHasPlaygroundEdits(false);
+    if (viewMode === 'preview') {
       setViewMode('split');
-      setHasPlaygroundEdits(false);
+    }
+  };
+
+  const handleRenameFile = (fileId, newName) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const formatted = trimmed.endsWith('.md') ? trimmed : `${trimmed}.md`;
+    setFiles(prev => prev.map(f => f.id === fileId ? { ...f, name: formatted, updatedAt: Date.now() } : f));
+  };
+
+  const handleDeleteFile = (fileId) => {
+    const fileToDelete = files.find(f => f.id === fileId);
+    const displayName = fileToDelete ? fileToDelete.name : 'this file';
+    if (!confirm(`Are you sure you want to delete "${displayName}"?`)) {
+      return;
+    }
+    if (fileToDelete) {
+      try {
+        localStorage.removeItem(`md_playground_saved_${fileToDelete.name}`);
+      } catch (e) {}
+    }
+    const remaining = files.filter(f => f.id !== fileId);
+    setFiles(remaining);
+    if (activeFileId === fileId) {
+      if (remaining.length > 0) {
+        setActiveFileId(remaining[0].id);
+      } else {
+        const fallbackId = `file-${Date.now()}`;
+        const fallbackDoc = {
+          id: fallbackId,
+          name: 'Untitled.md',
+          content: '# Untitled\n\nStart typing your markdown here...',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setFiles([fallbackDoc]);
+        setActiveFileId(fallbackId);
+      }
     }
   };
 
@@ -212,8 +375,23 @@ export default function App() {
     if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you proceed. Do you wish to proceed?')) {
       return;
     }
-    setContent(text);
-    setFileName(name);
+    const formattedName = name.endsWith('.md') || name.endsWith('.txt') || name.endsWith('.markdown') ? name : `${name}.md`;
+    const existing = files.find(f => f.name.toLowerCase() === formattedName.toLowerCase());
+    if (existing) {
+      setFiles(prev => prev.map(f => f.id === existing.id ? { ...f, content: text, updatedAt: Date.now() } : f));
+      setActiveFileId(existing.id);
+    } else {
+      const id = `file-${Date.now()}`;
+      const newDoc = {
+        id,
+        name: formattedName,
+        content: text,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      setFiles(prev => [newDoc, ...prev]);
+      setActiveFileId(id);
+    }
     setHasPlaygroundEdits(false);
   };
 
@@ -222,15 +400,38 @@ export default function App() {
       return;
     }
     setHasPlaygroundEdits(false);
+
+    let targetId = '';
+    let targetName = '';
+    let targetContent = '';
+
     if (type === 'showcase') {
-      setContent(SAMPLE_MARKDOWN);
-      setFileName('Showcase.md');
+      targetId = 'sample-showcase';
+      targetName = 'Showcase.md';
+      targetContent = SAMPLE_MARKDOWN;
     } else if (type === 'tech') {
-      setContent(TECH_TEMPLATE);
-      setFileName('Technical-Architecture.md');
+      targetId = 'sample-tech';
+      targetName = 'Technical-Architecture.md';
+      targetContent = TECH_TEMPLATE;
     } else if (type === 'notes') {
-      setContent(NOTES_TEMPLATE);
-      setFileName('Meeting-Notes.md');
+      targetId = 'sample-notes';
+      targetName = 'Meeting-Notes.md';
+      targetContent = NOTES_TEMPLATE;
+    }
+
+    const existing = files.find(f => f.id === targetId || f.name.toLowerCase() === targetName.toLowerCase());
+    if (existing) {
+      setActiveFileId(existing.id);
+    } else {
+      const newDoc = {
+        id: targetId || `sample-${Date.now()}`,
+        name: targetName,
+        content: targetContent,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      setFiles(prev => [newDoc, ...prev]);
+      setActiveFileId(newDoc.id);
     }
   };
 
@@ -261,7 +462,7 @@ export default function App() {
       {!isFullscreen && (
         <Navbar 
           fileName={fileName}
-          setFileName={setFileName}
+          setFileName={handleFileNameChange}
           viewMode={viewMode}
           setViewMode={setViewMode}
           theme={theme}
@@ -270,6 +471,8 @@ export default function App() {
           toggleFullscreen={toggleFullscreen}
           showToc={showToc}
           setShowToc={setShowToc}
+          showFileSidebar={showFileSidebar}
+          onToggleSidebar={() => setShowFileSidebar(prev => !prev)}
           columnWidth={columnWidth}
           setColumnWidth={setColumnWidth}
           onNewFile={handleNewFile}
@@ -286,11 +489,25 @@ export default function App() {
 
       {/* Main Workspace */}
       <div id="main-content" className="flex-1 flex overflow-hidden relative">
+        {/* Document Library Sidebar */}
+        {!isFullscreen && showFileSidebar && (
+          <FileSidebar 
+            files={files}
+            activeFileId={activeFile.id}
+            onSelectFile={handleSelectFile}
+            onNewFile={handleNewFile}
+            onRenameFile={handleRenameFile}
+            onDeleteFile={handleDeleteFile}
+            onImportFile={handleOpenFile}
+            onClose={() => setShowFileSidebar(false)}
+          />
+        )}
+
         {/* Editor Pane (when Split or Editor mode) */}
         {!isFullscreen && (viewMode === 'split' || viewMode === 'editor') && (
           <MarkdownEditor 
             content={content}
-            onChange={setContent}
+            onChange={handleContentChange}
             onDropFile={handleOpenFile}
           />
         )}
