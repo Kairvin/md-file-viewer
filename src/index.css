@@ -352,11 +352,33 @@ mark mark,
 
 .exporting-pdf mark.annotated-comment,
 .exporting-pdf .annotated-comment {
-  background-color: #e2e8f0 !important;
-  color: #0f172a !important;
-  border-bottom: 1.5px dashed #64748b !important;
+  border-bottom: 1.5px solid #64748b !important;
   padding: 0.1rem 0.25rem !important;
   border-radius: 0.2rem !important;
+}
+
+/* In exported PDF: Render the comment text clearly in an elegant review pill */
+.exporting-pdf mark.annotated-comment::after,
+.exporting-pdf .annotated-comment::after {
+  content: ' [💬 ' attr(data-comment) ']' !important;
+  font-size: 0.74em !important;
+  font-weight: 500 !important;
+  color: #334155 !important;
+  background-color: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 4px !important;
+  padding: 1px 5px !important;
+  margin-left: 4px !important;
+  display: inline-block !important;
+  font-style: normal !important;
+  -webkit-mask: none !important;
+  mask: none !important;
+  opacity: 1 !important;
+  width: auto !important;
+  height: auto !important;
+  vertical-align: baseline !important;
+  box-decoration-break: clone !important;
+  -webkit-box-decoration-break: clone !important;
 }
 
 .exporting-pdf u,
@@ -526,6 +548,30 @@ del {
   }
 
   .annotated-color {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Render comment text in vector print */
+  mark.annotated-comment::after,
+  .annotated-comment::after {
+    content: ' [💬 ' attr(data-comment) ']' !important;
+    font-size: 0.74em !important;
+    font-weight: 500 !important;
+    color: #334155 !important;
+    background-color: #f1f5f9 !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 4px !important;
+    padding: 1px 5px !important;
+    margin-left: 4px !important;
+    display: inline-block !important;
+    font-style: normal !important;
+    -webkit-mask: none !important;
+    mask: none !important;
+    opacity: 1 !important;
+    width: auto !important;
+    height: auto !important;
+    vertical-align: baseline !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
