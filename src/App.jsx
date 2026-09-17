@@ -4,6 +4,7 @@ import MarkdownViewer from './components/MarkdownViewer';
 import MarkdownEditor from './components/MarkdownEditor';
 import TableOfContents from './components/TableOfContents';
 import FileSidebar from './components/FileSidebar';
+import ConfirmModal from './components/ConfirmModal';
 import { parseMarkdown } from './utils/markdownParser';
 import { SAMPLE_MARKDOWN } from './utils/sampleDocument';
 import { printToPdf, downloadDirectPdf, downloadMarkdown, downloadHtml } from './utils/pdfExport';
@@ -161,6 +162,22 @@ export default function App() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [hasPlaygroundEdits, setHasPlaygroundEdits] = useState(false);
 
+  // In-App Confirmation Modal state
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    fileName: '',
+    message: '',
+    confirmLabel: 'Confirm',
+    cancelLabel: 'Cancel',
+    variant: 'danger',
+    onConfirm: () => {},
+  });
+
+  const closeConfirmModal = useCallback(() => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  }, []);
+
   // Active file derived from state
   const activeFile = useMemo(() => {
     return files.find(f => f.id === activeFileId) || files[0] || {
@@ -301,36 +318,66 @@ export default function App() {
 
   const handleSelectFile = (fileId) => {
     if (fileId === activeFile.id) return;
-    if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you switch files. Do you wish to proceed?')) {
+    if (hasPlaygroundEdits) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Unsaved Changes in Playground',
+        fileName: activeFile.name,
+        message: 'You have unsaved changes in Playground. If you switch documents now, your unsaved edits will be lost.',
+        confirmLabel: 'Discard & Switch',
+        cancelLabel: 'Keep Editing',
+        variant: 'warning',
+        onConfirm: () => {
+          setHasPlaygroundEdits(false);
+          setActiveFileId(fileId);
+          closeConfirmModal();
+        }
+      });
       return;
     }
-    setHasPlaygroundEdits(false);
     setActiveFileId(fileId);
   };
 
   const handleNewFile = () => {
-    if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you proceed. Do you wish to proceed?')) {
-      return;
-    }
-    const id = `file-${Date.now()}`;
-    const count = files.filter(f => f.name.toLowerCase().startsWith('untitled')).length;
-    const newName = count === 0 ? 'Untitled.md' : `Untitled-${count + 1}.md`;
-    const initialContent = `# ${newName.replace(/\.md$/, '')}\n\nStart typing your markdown here...`;
+    const createDoc = () => {
+      const id = `file-${Date.now()}`;
+      const count = files.filter(f => f.name.toLowerCase().startsWith('untitled')).length;
+      const newName = count === 0 ? 'Untitled.md' : `Untitled-${count + 1}.md`;
+      const initialContent = `# ${newName.replace(/\.md$/, '')}\n\nStart typing your markdown here...`;
 
-    const newDoc = {
-      id,
-      name: newName,
-      content: initialContent,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      const newDoc = {
+        id,
+        name: newName,
+        content: initialContent,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      setFiles(prev => [newDoc, ...prev]);
+      setActiveFileId(id);
+      setHasPlaygroundEdits(false);
+      if (viewMode === 'preview') {
+        setViewMode('split');
+      }
     };
 
-    setFiles(prev => [newDoc, ...prev]);
-    setActiveFileId(id);
-    setHasPlaygroundEdits(false);
-    if (viewMode === 'preview') {
-      setViewMode('split');
+    if (hasPlaygroundEdits) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Unsaved Changes in Playground',
+        fileName: activeFile.name,
+        message: 'You have unsaved changes in Playground. If you create a new document now, your unsaved edits will be lost.',
+        confirmLabel: 'Discard & Create',
+        cancelLabel: 'Keep Editing',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          createDoc();
+        }
+      });
+      return;
     }
+    createDoc();
   };
 
   const handleRenameFile = (fileId, newName) => {
@@ -342,97 +389,140 @@ export default function App() {
 
   const handleDeleteFile = (fileId) => {
     const fileToDelete = files.find(f => f.id === fileId);
-    const displayName = fileToDelete ? fileToDelete.name : 'this file';
-    if (!confirm(`Are you sure you want to delete "${displayName}"?`)) {
-      return;
-    }
-    if (fileToDelete) {
-      try {
-        localStorage.removeItem(`md_playground_saved_${fileToDelete.name}`);
-      } catch (e) {}
-    }
-    const remaining = files.filter(f => f.id !== fileId);
-    setFiles(remaining);
-    if (activeFileId === fileId) {
-      if (remaining.length > 0) {
-        setActiveFileId(remaining[0].id);
-      } else {
-        const fallbackId = `file-${Date.now()}`;
-        const fallbackDoc = {
-          id: fallbackId,
-          name: 'Untitled.md',
-          content: '# Untitled\n\nStart typing your markdown here...',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        setFiles([fallbackDoc]);
-        setActiveFileId(fallbackId);
+    if (!fileToDelete) return;
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Document',
+      fileName: fileToDelete.name,
+      message: 'Are you sure you want to delete this document? This action cannot be undone and will permanently remove all drafts, notes, and annotations for this file.',
+      confirmLabel: 'Delete File',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+      onConfirm: () => {
+        try {
+          localStorage.removeItem(`md_playground_saved_${fileToDelete.name}`);
+        } catch (e) {}
+
+        const remaining = files.filter(f => f.id !== fileId);
+        setFiles(remaining);
+
+        if (activeFileId === fileId) {
+          if (remaining.length > 0) {
+            setActiveFileId(remaining[0].id);
+          } else {
+            const fallbackId = `file-${Date.now()}`;
+            const fallbackDoc = {
+              id: fallbackId,
+              name: 'Untitled.md',
+              content: '# Untitled\n\nStart typing your markdown here...',
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+            setFiles([fallbackDoc]);
+            setActiveFileId(fallbackId);
+          }
+        }
+        closeConfirmModal();
       }
-    }
+    });
   };
 
   const handleOpenFile = (name, text) => {
-    if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you proceed. Do you wish to proceed?')) {
+    const openDoc = () => {
+      const formattedName = name.endsWith('.md') || name.endsWith('.txt') || name.endsWith('.markdown') ? name : `${name}.md`;
+      const existing = files.find(f => f.name.toLowerCase() === formattedName.toLowerCase());
+      if (existing) {
+        setFiles(prev => prev.map(f => f.id === existing.id ? { ...f, content: text, updatedAt: Date.now() } : f));
+        setActiveFileId(existing.id);
+      } else {
+        const id = `file-${Date.now()}`;
+        const newDoc = {
+          id,
+          name: formattedName,
+          content: text,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setFiles(prev => [newDoc, ...prev]);
+        setActiveFileId(id);
+      }
+      setHasPlaygroundEdits(false);
+    };
+
+    if (hasPlaygroundEdits) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Unsaved Changes in Playground',
+        fileName: activeFile.name,
+        message: 'You have unsaved changes in Playground. Opening another file without saving will discard your edits.',
+        confirmLabel: 'Discard & Open',
+        cancelLabel: 'Keep Editing',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          openDoc();
+        }
+      });
       return;
     }
-    const formattedName = name.endsWith('.md') || name.endsWith('.txt') || name.endsWith('.markdown') ? name : `${name}.md`;
-    const existing = files.find(f => f.name.toLowerCase() === formattedName.toLowerCase());
-    if (existing) {
-      setFiles(prev => prev.map(f => f.id === existing.id ? { ...f, content: text, updatedAt: Date.now() } : f));
-      setActiveFileId(existing.id);
-    } else {
-      const id = `file-${Date.now()}`;
-      const newDoc = {
-        id,
-        name: formattedName,
-        content: text,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      setFiles(prev => [newDoc, ...prev]);
-      setActiveFileId(id);
-    }
-    setHasPlaygroundEdits(false);
+    openDoc();
   };
 
   const handleLoadSample = (type) => {
-    if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you proceed. Do you wish to proceed?')) {
+    const loadSample = () => {
+      setHasPlaygroundEdits(false);
+      let targetId = '';
+      let targetName = '';
+      let targetContent = '';
+
+      if (type === 'showcase') {
+        targetId = 'sample-showcase';
+        targetName = 'Showcase.md';
+        targetContent = SAMPLE_MARKDOWN;
+      } else if (type === 'tech') {
+        targetId = 'sample-tech';
+        targetName = 'Technical-Architecture.md';
+        targetContent = TECH_TEMPLATE;
+      } else if (type === 'notes') {
+        targetId = 'sample-notes';
+        targetName = 'Meeting-Notes.md';
+        targetContent = NOTES_TEMPLATE;
+      }
+
+      const existing = files.find(f => f.id === targetId || f.name.toLowerCase() === targetName.toLowerCase());
+      if (existing) {
+        setActiveFileId(existing.id);
+      } else {
+        const newDoc = {
+          id: targetId || `sample-${Date.now()}`,
+          name: targetName,
+          content: targetContent,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setFiles(prev => [newDoc, ...prev]);
+        setActiveFileId(newDoc.id);
+      }
+    };
+
+    if (hasPlaygroundEdits) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Unsaved Changes in Playground',
+        fileName: activeFile.name,
+        message: 'You have unsaved changes in Playground. Loading a starter template will discard your unsaved edits.',
+        confirmLabel: 'Discard & Load',
+        cancelLabel: 'Keep Editing',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          loadSample();
+        }
+      });
       return;
     }
-    setHasPlaygroundEdits(false);
-
-    let targetId = '';
-    let targetName = '';
-    let targetContent = '';
-
-    if (type === 'showcase') {
-      targetId = 'sample-showcase';
-      targetName = 'Showcase.md';
-      targetContent = SAMPLE_MARKDOWN;
-    } else if (type === 'tech') {
-      targetId = 'sample-tech';
-      targetName = 'Technical-Architecture.md';
-      targetContent = TECH_TEMPLATE;
-    } else if (type === 'notes') {
-      targetId = 'sample-notes';
-      targetName = 'Meeting-Notes.md';
-      targetContent = NOTES_TEMPLATE;
-    }
-
-    const existing = files.find(f => f.id === targetId || f.name.toLowerCase() === targetName.toLowerCase());
-    if (existing) {
-      setActiveFileId(existing.id);
-    } else {
-      const newDoc = {
-        id: targetId || `sample-${Date.now()}`,
-        name: targetName,
-        content: targetContent,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      setFiles(prev => [newDoc, ...prev]);
-      setActiveFileId(newDoc.id);
-    }
+    loadSample();
   };
 
   const handlePrintPdf = () => {
@@ -541,6 +631,19 @@ export default function App() {
           />
         )}
       </div>
+
+      {/* Global In-App Confirmation Alert Modal */}
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        fileName={confirmModal.fileName}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        cancelLabel={confirmModal.cancelLabel}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
     </div>
   );
 }

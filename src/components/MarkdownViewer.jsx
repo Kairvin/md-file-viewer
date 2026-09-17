@@ -20,6 +20,7 @@ import {
 import FloatingAnnotationBar from './FloatingAnnotationBar';
 import PlaygroundToolbar from './PlaygroundToolbar';
 import CommentPopover from './CommentPopover';
+import ConfirmModal from './ConfirmModal';
 
 export default function MarkdownViewer({
   html,
@@ -58,6 +59,7 @@ export default function MarkdownViewer({
     targetElement: null
   });
   const savedRangeForCommentRef = useRef(null);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   // Storage key for saving Playground edits per file
   const storageKey = `md_playground_saved_${fileName}`;
@@ -539,14 +541,17 @@ export default function MarkdownViewer({
   };
 
   const handleResetOriginal = () => {
-    if (confirm('Revert document to original Markdown? All saved and unsaved playground edits will be cleared.')) {
-      localStorage.removeItem(storageKey);
-      setResetKey(prev => prev + 1);
-      setHasEdits(false);
-      onPlaygroundEditsChange?.(false);
-      setSelectionBox({ top: 0, left: 0, visible: false });
-      setCommentPopover(prev => ({ ...prev, isOpen: false }));
-    }
+    setShowResetModal(true);
+  };
+
+  const handleConfirmResetOriginal = () => {
+    localStorage.removeItem(storageKey);
+    setResetKey(prev => prev + 1);
+    setHasEdits(false);
+    onPlaygroundEditsChange?.(false);
+    setSelectionBox({ top: 0, left: 0, visible: false });
+    setCommentPopover(prev => ({ ...prev, isOpen: false }));
+    setShowResetModal(false);
   };
 
   // Intercept beforeunload: ask user before reloading if there are unsaved edits
@@ -883,6 +888,19 @@ export default function MarkdownViewer({
         onDelete={handleDeleteComment}
         onClose={() => setCommentPopover(prev => ({ ...prev, isOpen: false }))}
         onChangeMode={(newMode) => setCommentPopover(prev => ({ ...prev, mode: newMode }))}
+      />
+
+      {/* Reset to Original Confirmation Alert Modal */}
+      <ConfirmModal 
+        isOpen={showResetModal}
+        title="Reset Document"
+        fileName={fileName}
+        message="Are you sure you want to revert this document to its original Markdown? All saved and unsaved playground edits, highlights, and comments will be permanently cleared."
+        confirmLabel="Reset Document"
+        cancelLabel="Keep Edits"
+        variant="danger"
+        onConfirm={handleConfirmResetOriginal}
+        onCancel={() => setShowResetModal(false)}
       />
 
       {/* Reader Paper Viewport - Calibrated padding for mobile/tablet */}
