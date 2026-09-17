@@ -141,6 +141,8 @@ export default function MarkdownViewer({
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const isInternalHistoryUpdateRef = useRef(false);
   const inputDebounceTimerRef = useRef(null);
+  const justSavedTimerRef = useRef(null);
+  const autoSaveDebounceTimerRef = useRef(null);
 
   // Snapshot recording function
   const pushHistorySnapshot = (explicitHtml) => {
@@ -189,7 +191,42 @@ export default function MarkdownViewer({
     return () => clearTimeout(timer);
   }, [resetKey, html]);
 
-  // Handle typing input inside contentEditable paper with debounce
+  // Core Save Playground Draft
+  const handleSavePlayground = useCallback((showIndicator = true) => {
+    const paper = paperRef.current;
+    if (!paper) return;
+    const body = paper.querySelector('.markdown-body');
+    if (!body) return;
+
+    try {
+      localStorage.setItem(storageKey, body.innerHTML);
+      setHasEdits(false);
+      onPlaygroundEditsChange?.(false);
+      if (showIndicator) {
+        setIsJustSaved(true);
+        if (justSavedTimerRef.current) clearTimeout(justSavedTimerRef.current);
+        justSavedTimerRef.current = setTimeout(() => setIsJustSaved(false), 2200);
+      }
+    } catch (err) {
+      console.error('Failed to auto-save playground changes:', err);
+    }
+  }, [storageKey, onPlaygroundEditsChange]);
+
+  // Auto-save debouncer: saves changes automatically so work is never lost
+  const triggerAutoSave = useCallback((showIndicator = true, delay = 100) => {
+    if (autoSaveDebounceTimerRef.current) {
+      clearTimeout(autoSaveDebounceTimerRef.current);
+    }
+    if (delay === 0) {
+      handleSavePlayground(showIndicator);
+    } else {
+      autoSaveDebounceTimerRef.current = setTimeout(() => {
+        handleSavePlayground(showIndicator);
+      }, delay);
+    }
+  }, [handleSavePlayground]);
+
+  // Handle typing input inside contentEditable paper with debounce and auto-save
   const handleContentInput = () => {
     setHasEdits(true);
     onPlaygroundEditsChange?.(true);
@@ -197,20 +234,8 @@ export default function MarkdownViewer({
     inputDebounceTimerRef.current = setTimeout(() => {
       pushHistorySnapshot();
     }, 350);
-  };
 
-  // Explicit Save Playground Draft
-  const handleSavePlayground = () => {
-    const paper = paperRef.current;
-    if (!paper) return;
-    const body = paper.querySelector('.markdown-body');
-    if (!body) return;
-
-    localStorage.setItem(storageKey, body.innerHTML);
-    setHasEdits(false);
-    setIsJustSaved(true);
-    setTimeout(() => setIsJustSaved(false), 2200);
-    onPlaygroundEditsChange?.(false);
+    triggerAutoSave(true, 1200);
   };
 
   // Format Handlers
@@ -278,6 +303,7 @@ export default function MarkdownViewer({
       document.execCommand('hiliteColor', false, color);
     }
     pushHistorySnapshot();
+    triggerAutoSave(true, 300);
   };
 
   const handleTextColor = (color) => {
@@ -292,6 +318,7 @@ export default function MarkdownViewer({
     if (!color) {
       document.execCommand('foreColor', false, '#0f172a');
       pushHistorySnapshot();
+      triggerAutoSave(true, 300);
       return;
     }
 
@@ -312,6 +339,7 @@ export default function MarkdownViewer({
       document.execCommand('foreColor', false, color);
     }
     pushHistorySnapshot();
+    triggerAutoSave(true, 300);
   };
 
   const handleUnderline = () => {
@@ -319,6 +347,7 @@ export default function MarkdownViewer({
     onPlaygroundEditsChange?.(true);
     document.execCommand('underline', false, null);
     pushHistorySnapshot();
+    triggerAutoSave(true, 300);
   };
 
   const handleStrikethrough = () => {
@@ -326,6 +355,7 @@ export default function MarkdownViewer({
     onPlaygroundEditsChange?.(true);
     document.execCommand('strikeThrough', false, null);
     pushHistorySnapshot();
+    triggerAutoSave(true, 300);
   };
 
   const handleBold = () => {
@@ -333,6 +363,7 @@ export default function MarkdownViewer({
     onPlaygroundEditsChange?.(true);
     document.execCommand('bold', false, null);
     pushHistorySnapshot();
+    triggerAutoSave(true, 300);
   };
 
   const handleItalic = () => {
@@ -340,6 +371,7 @@ export default function MarkdownViewer({
     onPlaygroundEditsChange?.(true);
     document.execCommand('italic', false, null);
     pushHistorySnapshot();
+    triggerAutoSave(true, 300);
   };
 
   const handleClearFormat = () => {
@@ -348,6 +380,7 @@ export default function MarkdownViewer({
     document.execCommand('removeFormat', false, null);
     setSelectionBox(prev => ({ ...prev, visible: false }));
     pushHistorySnapshot();
+    triggerAutoSave(true, 300);
   };
 
   const handleUndo = () => {
@@ -375,6 +408,7 @@ export default function MarkdownViewer({
     });
     setHasEdits(true);
     onPlaygroundEditsChange?.(true);
+    triggerAutoSave(false, 400);
   };
 
   const handleRedo = () => {
@@ -402,6 +436,7 @@ export default function MarkdownViewer({
     });
     setHasEdits(true);
     onPlaygroundEditsChange?.(true);
+    triggerAutoSave(false, 400);
   };
 
   // Open comment popover in create mode for selected text
@@ -492,23 +527,27 @@ export default function MarkdownViewer({
         savedRangeForCommentRef.current = null;
 
         pushHistorySnapshot();
-        setHasEdits(true);
-        onPlaygroundEditsChange?.(true);
+        setHasEdits(false);
+        onPlaygroundEditsChange?.(false);
       } catch (err) {
         console.error('Failed to create comment annotation:', err);
       }
 
       setCommentPopover(prev => ({ ...prev, isOpen: false }));
+      // Immediate auto-save once user is done adding a comment
+      triggerAutoSave(true, 50);
     } else if (commentPopover.mode === 'edit') {
       const el = commentPopover.targetElement;
       if (el && commentText.trim()) {
         el.setAttribute('data-comment', commentText.trim());
         el.title = `Comment: ${commentText.trim()}`;
         pushHistorySnapshot();
-        setHasEdits(true);
-        onPlaygroundEditsChange?.(true);
+        setHasEdits(false);
+        onPlaygroundEditsChange?.(false);
       }
       setCommentPopover(prev => ({ ...prev, isOpen: false, text: commentText.trim() }));
+      // Immediate auto-save once user is done editing a comment
+      triggerAutoSave(true, 50);
     }
   };
 
@@ -531,10 +570,12 @@ export default function MarkdownViewer({
       }
 
       pushHistorySnapshot();
-      setHasEdits(true);
-      onPlaygroundEditsChange?.(true);
+      setHasEdits(false);
+      onPlaygroundEditsChange?.(false);
     }
     setCommentPopover(prev => ({ ...prev, isOpen: false, targetElement: null }));
+    // Immediate auto-save once comment is deleted
+    triggerAutoSave(true, 50);
   };
 
   const handleResetOriginal = () => {
@@ -551,19 +592,27 @@ export default function MarkdownViewer({
     setShowResetModal(false);
   };
 
-  // Intercept beforeunload: ask user before reloading if there are unsaved edits
+  // Auto-save and emergency flush on beforeunload
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      if (isPlayground && hasEdits) {
-        e.preventDefault();
-        e.returnValue = 'You have unsaved changes in Playground. If you reload or leave, your changes will be lost. Do you wish to proceed?';
-        return e.returnValue;
+      if (isPlayground) {
+        const paper = paperRef.current;
+        if (paper) {
+          const body = paper.querySelector('.markdown-body');
+          if (body) {
+            try {
+              localStorage.setItem(storageKey, body.innerHTML);
+            } catch (err) {
+              console.error('Failed to sync on beforeunload:', err);
+            }
+          }
+        }
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isPlayground, hasEdits]);
+  }, [isPlayground, storageKey]);
 
   // Keyboard shortcut listener for Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, and Ctrl/Cmd+S (Save)
   useEffect(() => {
@@ -937,8 +986,9 @@ export default function MarkdownViewer({
                 <PenTool className="w-3.5 h-3.5 text-blue-500" />
                 <span>Playground Mode: Direct in-place editing & highlighting active</span>
               </span>
-              <span className="text-[11px] text-slate-400 hidden sm:inline">
-                {hasRestoredDraft ? 'Saved draft restored · Press Cmd+S or Save Changes to update' : 'Unsaved edits are lost on reload · Click Save Changes or press Cmd+S'}
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 hidden sm:inline flex items-center gap-1 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                Auto-save active · Comments & annotations persist automatically
               </span>
             </div>
           )}
