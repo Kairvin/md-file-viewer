@@ -204,6 +204,20 @@ export default function Navbar({
             <Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span className="hidden sm:inline">Editor</span>
           </button>
+
+          {/* Playground / Annotator Mode */}
+          <button
+            onClick={() => setViewMode('playground')}
+            className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-all ${
+              viewMode === 'playground' 
+                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm font-semibold' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+            }`}
+            title="Playground Mode (Text Highlighter, In-Place Editor & Annotator)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Playground</span>
+          </button>
         </div>
       </div>
 
@@ -435,6 +449,49 @@ export default function Navbar({
                   {isFullscreen ? <Minimize2 className="w-4 h-4 text-amber-500" /> : <Maximize2 className="w-4 h-4 text-amber-500" />}
                   <span>{isFullscreen ? "Exit Fullscreen" : "Fullscreen Zen Mode"}</span>
                 </button>
+              </div>
+
+              {/* View Modes Selection for Mobile */}
+              <div className="mt-5">
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-2">View & Edit Mode</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { setViewMode('preview'); setShowMobileMenu(false); }}
+                    className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-2 transition-all ${
+                      viewMode === 'preview' 
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-semibold' 
+                        : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Preview</span>
+                  </button>
+                  <button
+                    onClick={() => { setViewMode('editor'); setShowMobileMenu(false); }}
+                    className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-2 transition-all ${
+                      viewMode === 'editor' 
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-semibold' 
+                        : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Editor</span>
+                  </button>
+                  <button
+                    onClick={() => { setViewMode('playground'); setShowMobileMenu(false); }}
+                    className={`col-span-2 p-2.5 rounded-xl border text-xs font-medium flex items-center justify-between transition-all ${
+                      viewMode === 'playground' 
+                        ? 'border-indigo-500 bg-gradient-to-r from-indigo-500/15 to-purple-500/15 text-indigo-600 dark:text-indigo-400 font-bold' 
+                        : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      <span>Playground (Annotate & Edit)</span>
+                    </span>
+                    <span className="text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-bold">New</span>
+                  </button>
+                </div>
               </div>
 
               {/* Theme Picker */}

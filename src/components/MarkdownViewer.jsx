@@ -13,8 +13,12 @@ import {
   Copy,
   AlignJustify,
   FileDown,
-  Maximize2
+  Maximize2,
+  Sparkles,
+  PenTool
 } from 'lucide-react';
+import FloatingAnnotationBar from './FloatingAnnotationBar';
+import PlaygroundToolbar from './PlaygroundToolbar';
 
 export default function MarkdownViewer({
   html,
@@ -26,10 +30,17 @@ export default function MarkdownViewer({
   setColumnWidth,
   onPrintPdf,
   onDirectPdfDownload,
-  onDropFile
+  onDropFile,
+  isPlayground = false,
+  onTogglePlayground,
+  isExportingPdf = false
 }) {
   const containerRef = useRef(null);
+  const paperRef = useRef(null);
   const [fontSize, setFontSize] = useState(16); // px
+  const [selectionBox, setSelectionBox] = useState({ top: 0, left: 0, visible: false });
+  const [hasEdits, setHasEdits] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
 
   // Responsive width mapping: full width on mobile phones, customized on tablet/desktop
   const widthClasses = {
@@ -43,6 +54,156 @@ export default function MarkdownViewer({
     const modes = ['95%', '100%', 'wide', 'standard'];
     const idx = modes.indexOf(columnWidth);
     setColumnWidth(modes[(idx + 1) % modes.length]);
+  };
+
+  // Track selection changes to show the FloatingAnnotationBar
+  useEffect(() => {
+    if (!isPlayground) {
+      setSelectionBox({ top: 0, left: 0, visible: false });
+      return;
+    }
+
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+        setSelectionBox(prev => prev.visible ? { ...prev, visible: false } : prev);
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const paper = paperRef.current;
+      if (!paper || !paper.contains(range.commonAncestorContainer)) {
+        setSelectionBox(prev => prev.visible ? { ...prev, visible: false } : prev);
+        return;
+      }
+
+      const rect = range.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        setSelectionBox(prev => prev.visible ? { ...prev, visible: false } : prev);
+        return;
+      }
+
+      const top = rect.top - 54 < 10 ? rect.bottom + 10 : rect.top - 54;
+      const left = rect.left + (rect.width / 2) - 140;
+
+      setSelectionBox({
+        top,
+        left,
+        visible: true
+      });
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [isPlayground]);
+
+  // Format Handlers
+  const handleHighlight = (color) => {
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (range.collapsed) return;
+
+    setHasEdits(true);
+
+    if (!color) {
+      document.execCommand('removeFormat', false, null);
+      setSelectionBox(prev => ({ ...prev, visible: false }));
+      return;
+    }
+
+    try {
+      const mark = document.createElement('mark');
+      mark.style.backgroundColor = color;
+      mark.style.color = 'inherit';
+      mark.style.padding = '0.12rem 0.35rem';
+      mark.style.borderRadius = '0.25rem';
+      mark.className = 'annotated-mark';
+      
+      const fragment = range.extractContents();
+      mark.appendChild(fragment);
+      range.insertNode(mark);
+      
+      selection.removeAllRanges();
+      const newRange = document.createRange();
+      newRange.selectNodeContents(mark);
+      selection.addRange(newRange);
+    } catch (e) {
+      document.execCommand('hiliteColor', false, color);
+    }
+  };
+
+  const handleTextColor = (color) => {
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (range.collapsed) return;
+
+    setHasEdits(true);
+
+    if (!color) {
+      document.execCommand('foreColor', false, '#0f172a');
+      return;
+    }
+
+    try {
+      const span = document.createElement('span');
+      span.style.color = color;
+      span.className = 'annotated-color';
+      
+      const fragment = range.extractContents();
+      span.appendChild(fragment);
+      range.insertNode(span);
+      
+      selection.removeAllRanges();
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
+      selection.addRange(newRange);
+    } catch (e) {
+      document.execCommand('foreColor', false, color);
+    }
+  };
+
+  const handleUnderline = () => {
+    setHasEdits(true);
+    document.execCommand('underline', false, null);
+  };
+
+  const handleStrikethrough = () => {
+    setHasEdits(true);
+    document.execCommand('strikeThrough', false, null);
+  };
+
+  const handleBold = () => {
+    setHasEdits(true);
+    document.execCommand('bold', false, null);
+  };
+
+  const handleItalic = () => {
+    setHasEdits(true);
+    document.execCommand('italic', false, null);
+  };
+
+  const handleClearFormat = () => {
+    setHasEdits(true);
+    document.execCommand('removeFormat', false, null);
+    setSelectionBox(prev => ({ ...prev, visible: false }));
+  };
+
+  const handleUndo = () => {
+    document.execCommand('undo', false, null);
+  };
+
+  const handleRedo = () => {
+    document.execCommand('redo', false, null);
+  };
+
+  const handleResetOriginal = () => {
+    if (confirm('Revert document to original Markdown? All highlights and in-place edits will be reset.')) {
+      setResetKey(prev => prev + 1);
+      setHasEdits(false);
+      setSelectionBox({ top: 0, left: 0, visible: false });
+    }
   };
 
   // Setup click handler for copy code buttons & mermaid toggle buttons
@@ -260,17 +421,87 @@ export default function MarkdownViewer({
         </div>
       )}
 
+      {/* Playground Top Control Toolbar */}
+      {isPlayground && (
+        <PlaygroundToolbar 
+          onHighlight={handleHighlight}
+          onTextColor={handleTextColor}
+          onUnderline={handleUnderline}
+          onStrikethrough={handleStrikethrough}
+          onBold={handleBold}
+          onItalic={handleItalic}
+          onClearFormat={handleClearFormat}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onResetOriginal={handleResetOriginal}
+          onDownloadAnnotatedPdf={onDirectPdfDownload}
+          isExportingPdf={isExportingPdf}
+          hasEdits={hasEdits}
+        />
+      )}
+
+      {/* Floating Selection Formatting Bar */}
+      {isPlayground && selectionBox.visible && (
+        <FloatingAnnotationBar 
+          position={selectionBox}
+          onHighlight={handleHighlight}
+          onTextColor={handleTextColor}
+          onUnderline={handleUnderline}
+          onStrikethrough={handleStrikethrough}
+          onBold={handleBold}
+          onItalic={handleItalic}
+          onClearFormat={handleClearFormat}
+          onClose={() => setSelectionBox(prev => ({ ...prev, visible: false }))}
+        />
+      )}
+
       {/* Reader Paper Viewport - Calibrated padding for mobile/tablet */}
       <main className="py-3 sm:py-6 md:py-8 px-1.5 sm:px-4 md:px-6 flex justify-center min-h-full">
         <article 
           id="preview-paper"
-          ref={containerRef}
+          key={resetKey}
+          ref={(el) => {
+            containerRef.current = el;
+            paperRef.current = el;
+          }}
           style={{ fontSize: `${fontSize}px` }}
-          className={`${widthClasses[columnWidth] || widthClasses['95%']} bg-[var(--bg-primary)] text-[var(--text-main)] rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-3.5 sm:p-7 md:p-12 shadow-lg shadow-slate-200/50 dark:shadow-none transition-all duration-200 max-w-full overflow-hidden`}
+          className={`${widthClasses[columnWidth] || widthClasses['95%']} bg-[var(--bg-primary)] text-[var(--text-main)] rounded-xl sm:rounded-2xl border ${
+            isPlayground 
+              ? 'border-indigo-400 dark:border-indigo-600 ring-4 ring-indigo-500/15 shadow-indigo-500/10' 
+              : 'border-slate-200/80 dark:border-slate-800/80 shadow-slate-200/50 dark:shadow-none'
+          } p-3.5 sm:p-7 md:p-12 shadow-lg transition-all duration-200 max-w-full overflow-hidden relative`}
         >
+          {/* Subtle Switch to Playground Banner in Preview Mode */}
+          {!isPlayground && onTogglePlayground && (
+            <div className="flex justify-end mb-3 no-print">
+              <button
+                onClick={onTogglePlayground}
+                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 text-xs font-medium flex items-center gap-1.5 transition-all shadow-xs"
+                title="Switch to interactive text highlighter, in-place editor, and styling tools"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Annotate & Edit in Playground</span>
+              </button>
+            </div>
+          )}
+
+          {/* Active Playground Mode Banner inside paper */}
+          {isPlayground && (
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-indigo-100 dark:border-indigo-950/60 text-xs text-indigo-600 dark:text-indigo-400 no-print select-none">
+              <span className="font-semibold flex items-center gap-1.5">
+                <PenTool className="w-3.5 h-3.5" />
+                <span>Playground Mode: Direct in-place editing & highlighting active</span>
+              </span>
+              <span className="text-[11px] text-slate-400 hidden sm:inline">All edits will be exported to PDF</span>
+            </div>
+          )}
+
           {html ? (
             <div 
-              className="markdown-body w-full break-words"
+              className="markdown-body w-full break-words outline-none"
+              contentEditable={isPlayground}
+              suppressContentEditableWarning={true}
+              onInput={() => setHasEdits(true)}
               dangerouslySetInnerHTML={{ __html: html }} 
             />
           ) : (

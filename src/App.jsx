@@ -281,8 +281,8 @@ export default function App() {
           />
         )}
 
-        {/* Preview Pane (when Split or Preview mode or Fullscreen) */}
-        {(isFullscreen || viewMode === 'split' || viewMode === 'preview') && (
+        {/* Preview / Playground Pane (when Split, Preview, or Playground mode or Fullscreen) */}
+        {(isFullscreen || viewMode === 'split' || viewMode === 'preview' || viewMode === 'playground') && (
           <MarkdownViewer 
             html={html}
             theme={theme}
@@ -294,6 +294,9 @@ export default function App() {
             onPrintPdf={handlePrintPdf}
             onDirectPdfDownload={handleDirectPdfDownload}
             onDropFile={handleOpenFile}
+            isPlayground={viewMode === 'playground'}
+            onTogglePlayground={() => setViewMode(viewMode === 'playground' ? 'preview' : 'playground')}
+            isExportingPdf={isExportingPdf}
           />
         )}
 

@@ -240,7 +240,42 @@
 
 .exporting-pdf * {
   box-sizing: border-box !important;
+}
+
+.exporting-pdf *:not([style*="color"]):not(mark):not(.annotated-color):not(a) {
   color: #0f172a !important;
+}
+
+/* Annotation Highlights, Underline, and Strikethrough */
+mark,
+.annotated-mark {
+  background-color: #fef08a;
+  color: inherit !important;
+  padding: 0.12rem 0.35rem;
+  border-radius: 0.25rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.exporting-pdf mark,
+.exporting-pdf .annotated-mark {
+  padding: 0.1rem 0.25rem !important;
+  border-radius: 0.2rem !important;
+  box-decoration-break: clone !important;
+  -webkit-box-decoration-break: clone !important;
+}
+
+.exporting-pdf u,
+u {
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
+}
+
+.exporting-pdf s,
+.exporting-pdf del,
+s,
+del {
+  text-decoration: line-through !important;
 }
 
 /* Prevent text lines from being sliced in half horizontally across pages */
@@ -385,6 +420,20 @@
   body {
     background: #ffffff !important;
     color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Annotation preservation in print */
+  mark,
+  .annotated-mark {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .annotated-color {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   /* Reset theme variables to high-contrast print values */
