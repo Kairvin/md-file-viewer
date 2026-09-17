@@ -81,6 +81,10 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
       bg !== '#f1f5f9' && 
       bg !== 'rgb(51, 65, 85)' && 
       bg !== '#334155' && 
+      bg !== 'rgb(33, 38, 45)' && 
+      bg !== '#21262d' && 
+      bg !== 'rgb(30, 41, 59)' && 
+      bg !== '#1e293b' && 
       bg !== 'transparent' &&
       bg !== '';
     const isHighlighted = el.classList.contains('annotated-mark') || hasHighlightColor;
@@ -108,7 +112,12 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
   // B. Also clean any remaining mark elements that might have default comment backgrounds without a real highlight
   clone.querySelectorAll('mark').forEach(m => {
     const bg = m.style.backgroundColor;
-    const isCommentBg = !bg || bg === '#f1f5f9' || bg === 'rgb(241, 245, 249)' || bg === '#334155' || bg === 'rgb(51, 65, 85)' || bg === 'transparent';
+    const isCommentBg = !bg || 
+      bg === '#f1f5f9' || bg === 'rgb(241, 245, 249)' || 
+      bg === '#334155' || bg === 'rgb(51, 65, 85)' || 
+      bg === '#21262d' || bg === 'rgb(33, 38, 45)' || 
+      bg === '#1e293b' || bg === 'rgb(30, 41, 59)' || 
+      bg === 'transparent';
     if (!m.classList.contains('annotated-mark') && isCommentBg) {
       const parent = m.parentNode;
       if (parent) {

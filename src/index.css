@@ -253,7 +253,7 @@
 mark,
 .annotated-mark {
   background-color: #fef08a;
-  color: inherit !important;
+  color: #0f172a !important; /* Pastel highlights always require dark high-contrast readable text */
   padding: 0.08em 0.28em;
   border-radius: 0.25rem;
   box-decoration-break: clone;
@@ -262,11 +262,11 @@ mark,
   display: inline;
 }
 
-/* Inline Comments - Production Grade Refined Typography */
+/* Inline Comments - Production Grade Refined Typography (Light / Default) */
 mark.annotated-comment,
 .annotated-comment {
   background-color: #f1f5f9;
-  color: inherit !important;
+  color: #0f172a !important;
   padding: 0.08em 0.28em;
   border-radius: 0.25rem;
   border-bottom: 2px solid #94a3b8;
@@ -279,26 +279,88 @@ mark.annotated-comment,
   line-height: inherit;
 }
 
-/* When highlighted text has a comment: preserve highlight background, add refined border */
+/* Pure comments without a highlight: ensure theme-appropriate light background */
+mark.annotated-comment:not(.annotated-mark),
+.annotated-comment:not(.annotated-mark) {
+  background-color: #f1f5f9;
+  color: #0f172a !important;
+}
+
+/* When highlighted text has a comment: preserve highlight background, add refined dark border */
 mark.annotated-mark.annotated-comment,
 .annotated-mark.annotated-comment,
 mark[style*="background-color"].annotated-comment {
-  border-bottom: 2px solid rgba(15, 23, 42, 0.45);
+  color: #0f172a !important;
+  border-bottom: 2px solid rgba(15, 23, 42, 0.65);
 }
 
-.dark mark.annotated-comment,
-.dark .annotated-comment {
-  background-color: #334155;
-  color: inherit !important;
-  border-bottom-color: #64748b;
+/* -------------------------------------------------------------
+   DARK MODE & THEME SPECIFIC COMMENT & HIGHLIGHT FIXES
+   (Prevents white-on-white text in GitHub Dark, Obsidian, and Sepia)
+---------------------------------------------------------------- */
+
+/* Dark Mode (GitHub Dark, Obsidian, & .dark): Pure Comment Annotations */
+.dark mark.annotated-comment:not(.annotated-mark),
+.dark .annotated-comment:not(.annotated-mark),
+.theme-github-dark mark.annotated-comment:not(.annotated-mark),
+.theme-github-dark .annotated-comment:not(.annotated-mark),
+.theme-obsidian mark.annotated-comment:not(.annotated-mark),
+.theme-obsidian .annotated-comment:not(.annotated-mark),
+.dark mark[style*="241, 245, 249"]:not(.annotated-mark),
+.dark mark[style*="#f1f5f9"]:not(.annotated-mark),
+.dark mark[style*="f1f5f9"]:not(.annotated-mark),
+.theme-github-dark mark[style*="241, 245, 249"]:not(.annotated-mark),
+.theme-github-dark mark[style*="#f1f5f9"]:not(.annotated-mark),
+.theme-github-dark mark[style*="f1f5f9"]:not(.annotated-mark),
+.theme-obsidian mark[style*="241, 245, 249"]:not(.annotated-mark),
+.theme-obsidian mark[style*="#f1f5f9"]:not(.annotated-mark),
+.theme-obsidian mark[style*="f1f5f9"]:not(.annotated-mark) {
+  background-color: #21262d !important;
+  color: #f0f6fc !important;
+  border-bottom: 2px solid #58a6ff !important;
 }
 
+/* Obsidian Theme specific comment background */
+.theme-obsidian mark.annotated-comment:not(.annotated-mark),
+.theme-obsidian .annotated-comment:not(.annotated-mark),
+.theme-obsidian mark[style*="241, 245, 249"]:not(.annotated-mark),
+.theme-obsidian mark[style*="#f1f5f9"]:not(.annotated-mark) {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-bottom: 2px solid #38bdf8 !important;
+}
+
+/* Sepia Theme specific comment background */
+.theme-sepia mark.annotated-comment:not(.annotated-mark),
+.theme-sepia .annotated-comment:not(.annotated-mark) {
+  background-color: #ede4d1 !important;
+  color: #2d261e !important;
+  border-bottom: 2px solid #b45309 !important;
+}
+
+/* In Dark Mode: Highlighted text (e.g. yellow, green, blue, pink, orange, purple)
+   MUST have dark text so it doesn't wash out with white text on pastel */
+.dark mark,
+.dark .annotated-mark,
+.theme-github-dark mark,
+.theme-github-dark .annotated-mark,
+.theme-obsidian mark,
+.theme-obsidian .annotated-mark {
+  color: #0f172a !important;
+}
+
+/* In Dark Mode: When highlighted text also has a comment */
 .dark mark.annotated-mark.annotated-comment,
 .dark .annotated-mark.annotated-comment,
-.dark mark[style*="background-color"].annotated-comment {
-  border-bottom: 2px solid rgba(248, 250, 252, 0.55);
+.theme-github-dark mark.annotated-mark.annotated-comment,
+.theme-github-dark .annotated-mark.annotated-comment,
+.theme-obsidian mark.annotated-mark.annotated-comment,
+.theme-obsidian .annotated-mark.annotated-comment {
+  color: #0f172a !important;
+  border-bottom: 2px solid rgba(15, 23, 42, 0.75) !important;
 }
 
+/* Hover effects */
 mark.annotated-comment:hover,
 .annotated-comment:hover {
   filter: brightness(0.96);
@@ -306,8 +368,12 @@ mark.annotated-comment:hover,
 }
 
 .dark mark.annotated-comment:hover,
-.dark .annotated-comment:hover {
-  filter: brightness(1.1);
+.dark .annotated-comment:hover,
+.theme-github-dark mark.annotated-comment:hover,
+.theme-github-dark .annotated-comment:hover,
+.theme-obsidian mark.annotated-comment:hover,
+.theme-obsidian .annotated-comment:hover {
+  filter: brightness(1.2);
   border-bottom-color: #38bdf8 !important;
 }
 

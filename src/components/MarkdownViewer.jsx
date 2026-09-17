@@ -477,14 +477,11 @@ export default function MarkdownViewer({
           mark.setAttribute('data-comment', commentText.trim());
           mark.title = `Comment: ${commentText.trim()}`;
 
-          if (inheritedBgColor) {
+          if (inheritedBgColor && inheritedBgColor !== 'rgb(241, 245, 249)' && inheritedBgColor !== '#f1f5f9') {
             mark.classList.add('annotated-mark');
             mark.style.backgroundColor = inheritedBgColor;
-          } else {
-            mark.style.backgroundColor = '#f1f5f9';
           }
 
-          mark.style.color = 'inherit';
           mark.style.cursor = 'pointer';
 
           mark.appendChild(fragment);
