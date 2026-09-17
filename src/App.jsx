@@ -102,6 +102,7 @@ export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [hasPlaygroundEdits, setHasPlaygroundEdits] = useState(false);
 
   // Automatically adapt view mode on mobile screens
   useEffect(() => {
@@ -168,6 +169,7 @@ export default function App() {
       }
       // Save / Export
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        if (viewMode === 'playground') return;
         e.preventDefault();
         downloadMarkdown(content, fileName);
       }
@@ -180,7 +182,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen, toggleFullscreen, content, fileName]);
+  }, [isFullscreen, toggleFullscreen, content, fileName, viewMode]);
 
   // Fullscreen change listener
   useEffect(() => {
@@ -195,19 +197,31 @@ export default function App() {
 
   // Action handlers
   const handleNewFile = () => {
+    if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you proceed. Do you wish to proceed?')) {
+      return;
+    }
     if (confirm('Create a new blank document? Any unsaved edits will be cleared.')) {
       setContent('# Untitled Document\n\nStart typing your markdown here...');
       setFileName('Untitled.md');
       setViewMode('split');
+      setHasPlaygroundEdits(false);
     }
   };
 
   const handleOpenFile = (name, text) => {
+    if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you proceed. Do you wish to proceed?')) {
+      return;
+    }
     setContent(text);
     setFileName(name);
+    setHasPlaygroundEdits(false);
   };
 
   const handleLoadSample = (type) => {
+    if (hasPlaygroundEdits && !confirm('You have unsaved changes in Playground. Changes will be lost if you proceed. Do you wish to proceed?')) {
+      return;
+    }
+    setHasPlaygroundEdits(false);
     if (type === 'showcase') {
       setContent(SAMPLE_MARKDOWN);
       setFileName('Showcase.md');
@@ -285,6 +299,7 @@ export default function App() {
         {(isFullscreen || viewMode === 'split' || viewMode === 'preview' || viewMode === 'playground') && (
           <MarkdownViewer 
             html={html}
+            fileName={fileName}
             theme={theme}
             setTheme={setTheme}
             isFullscreen={isFullscreen}
@@ -297,6 +312,7 @@ export default function App() {
             isPlayground={viewMode === 'playground'}
             onTogglePlayground={() => setViewMode(viewMode === 'playground' ? 'preview' : 'playground')}
             isExportingPdf={isExportingPdf}
+            onPlaygroundEditsChange={setHasPlaygroundEdits}
           />
         )}
 

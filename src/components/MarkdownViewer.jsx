@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import mermaid from 'mermaid';
 import { 
   ZoomIn, 
@@ -33,7 +33,9 @@ export default function MarkdownViewer({
   onDropFile,
   isPlayground = false,
   onTogglePlayground,
-  isExportingPdf = false
+  isExportingPdf = false,
+  fileName = 'Document.md',
+  onPlaygroundEditsChange
 }) {
   const containerRef = useRef(null);
   const paperRef = useRef(null);
@@ -41,6 +43,26 @@ export default function MarkdownViewer({
   const [selectionBox, setSelectionBox] = useState({ top: 0, left: 0, visible: false });
   const [hasEdits, setHasEdits] = useState(false);
   const [resetKey, setResetKey] = useState(0);
+  const [isJustSaved, setIsJustSaved] = useState(false);
+
+  // Storage key for saving Playground edits per file
+  const storageKey = `md_playground_saved_${fileName}`;
+
+  // Active HTML for playground: loads saved draft if available
+  const displayHtml = useMemo(() => {
+    if (isPlayground && typeof window !== 'undefined') {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) return saved;
+    }
+    return html;
+  }, [isPlayground, storageKey, resetKey, html]);
+
+  const hasRestoredDraft = useMemo(() => {
+    if (isPlayground && typeof window !== 'undefined') {
+      return Boolean(localStorage.getItem(storageKey));
+    }
+    return false;
+  }, [isPlayground, storageKey, resetKey]);
 
   // Responsive width mapping: full width on mobile phones, customized on tablet/desktop
   const widthClasses = {
@@ -154,10 +176,25 @@ export default function MarkdownViewer({
   // Handle typing input inside contentEditable paper with debounce
   const handleContentInput = () => {
     setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
     if (inputDebounceTimerRef.current) clearTimeout(inputDebounceTimerRef.current);
     inputDebounceTimerRef.current = setTimeout(() => {
       pushHistorySnapshot();
     }, 350);
+  };
+
+  // Explicit Save Playground Draft
+  const handleSavePlayground = () => {
+    const paper = paperRef.current;
+    if (!paper) return;
+    const body = paper.querySelector('.markdown-body');
+    if (!body) return;
+
+    localStorage.setItem(storageKey, body.innerHTML);
+    setHasEdits(false);
+    setIsJustSaved(true);
+    setTimeout(() => setIsJustSaved(false), 2200);
+    onPlaygroundEditsChange?.(false);
   };
 
   // Format Handlers
@@ -168,6 +205,7 @@ export default function MarkdownViewer({
     if (range.collapsed) return;
 
     setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
 
     if (!color) {
       document.execCommand('removeFormat', false, null);
@@ -205,6 +243,7 @@ export default function MarkdownViewer({
     if (range.collapsed) return;
 
     setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
 
     if (!color) {
       document.execCommand('foreColor', false, '#0f172a');
@@ -233,30 +272,35 @@ export default function MarkdownViewer({
 
   const handleUnderline = () => {
     setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
     document.execCommand('underline', false, null);
     pushHistorySnapshot();
   };
 
   const handleStrikethrough = () => {
     setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
     document.execCommand('strikeThrough', false, null);
     pushHistorySnapshot();
   };
 
   const handleBold = () => {
     setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
     document.execCommand('bold', false, null);
     pushHistorySnapshot();
   };
 
   const handleItalic = () => {
     setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
     document.execCommand('italic', false, null);
     pushHistorySnapshot();
   };
 
   const handleClearFormat = () => {
     setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
     document.execCommand('removeFormat', false, null);
     setSelectionBox(prev => ({ ...prev, visible: false }));
     pushHistorySnapshot();
@@ -285,6 +329,8 @@ export default function MarkdownViewer({
       canUndo: newIndex > 0,
       canRedo: true
     });
+    setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
   };
 
   const handleRedo = () => {
@@ -310,21 +356,48 @@ export default function MarkdownViewer({
       canUndo: true,
       canRedo: newIndex < stack.length - 1
     });
+    setHasEdits(true);
+    onPlaygroundEditsChange?.(true);
   };
 
   const handleResetOriginal = () => {
-    if (confirm('Revert document to original Markdown? All highlights and in-place edits will be reset.')) {
+    if (confirm('Revert document to original Markdown? All saved and unsaved playground edits will be cleared.')) {
+      localStorage.removeItem(storageKey);
       setResetKey(prev => prev + 1);
       setHasEdits(false);
+      onPlaygroundEditsChange?.(false);
       setSelectionBox({ top: 0, left: 0, visible: false });
     }
   };
 
-  // Keyboard shortcut listener for Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z
+  // Intercept beforeunload: ask user before reloading if there are unsaved edits
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (isPlayground && hasEdits) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved changes in Playground. If you reload or leave, your changes will be lost. Do you wish to proceed?';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isPlayground, hasEdits]);
+
+  // Keyboard shortcut listener for Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, and Ctrl/Cmd+S (Save)
   useEffect(() => {
     if (!isPlayground) return;
 
     const handleKeyDown = (e) => {
+      // Save shortcut
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSavePlayground();
+        return;
+      }
+
+      // Undo / Redo shortcuts
       if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         if (e.shiftKey) {
@@ -340,7 +413,7 @@ export default function MarkdownViewer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayground]);
+  }, [isPlayground, hasEdits]);
 
   // Setup click handler for copy code buttons & mermaid toggle buttons
   useEffect(() => {
@@ -575,6 +648,8 @@ export default function MarkdownViewer({
           hasEdits={hasEdits}
           canUndo={historyState.canUndo}
           canRedo={historyState.canRedo}
+          onSave={handleSavePlayground}
+          isJustSaved={isJustSaved}
         />
       )}
 
@@ -630,17 +705,19 @@ export default function MarkdownViewer({
                 <PenTool className="w-3.5 h-3.5 text-blue-500" />
                 <span>Playground Mode: Direct in-place editing & highlighting active</span>
               </span>
-              <span className="text-[11px] text-slate-400 hidden sm:inline">All edits will be exported to PDF</span>
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                {hasRestoredDraft ? 'Saved draft restored · Press Cmd+S or Save Changes to update' : 'Unsaved edits are lost on reload · Click Save Changes or press Cmd+S'}
+              </span>
             </div>
           )}
 
-          {html ? (
+          {displayHtml ? (
             <div 
               className="markdown-body w-full break-words outline-none"
               contentEditable={isPlayground}
               suppressContentEditableWarning={true}
               onInput={handleContentInput}
-              dangerouslySetInnerHTML={{ __html: html }} 
+              dangerouslySetInnerHTML={{ __html: displayHtml }} 
             />
           ) : (
             <div className="py-20 text-center text-slate-400">

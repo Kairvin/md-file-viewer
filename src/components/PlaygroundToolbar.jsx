@@ -13,7 +13,8 @@ import {
   Sparkles, 
   ChevronDown,
   Info,
-  Check
+  Check,
+  Save
 } from 'lucide-react';
 import { HIGHLIGHT_COLORS, TEXT_COLORS } from './FloatingAnnotationBar';
 
@@ -32,7 +33,9 @@ export default function PlaygroundToolbar({
   isExportingPdf,
   hasEdits,
   canUndo = false,
-  canRedo = false
+  canRedo = false,
+  onSave,
+  isJustSaved = false
 }) {
   const [activeHighlightColor, setActiveHighlightColor] = useState('#fef08a');
   const [showColorDropdown, setShowColorDropdown] = useState(false);
@@ -209,8 +212,36 @@ export default function PlaygroundToolbar({
           </button>
         </div>
 
-        {/* Right: Download Annotated PDF */}
+        {/* Right: Save & Download Actions */}
         <div className="flex items-center gap-2">
+          {/* Save Changes Button */}
+          {onSave && (
+            <button
+              onClick={preventBlur(onSave)}
+              className={`px-3 py-1.5 sm:py-2 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition-all shadow-xs active:scale-95 ${
+                isJustSaved
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
+                  : hasEdits
+                  ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
+                  : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+              }`}
+              title={hasEdits ? "Save changes to this browser (Ctrl/Cmd + S) to persist on reload" : "All changes saved"}
+            >
+              {isJustSaved ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Saved ✓</span>
+                </>
+              ) : (
+                <>
+                  <Save className={`w-3.5 h-3.5 ${hasEdits ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500'}`} />
+                  <span className="hidden sm:inline">{hasEdits ? 'Save Changes' : 'Saved'}</span>
+                  {hasEdits && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
+                </>
+              )}
+            </button>
+          )}
+
           <button
             onClick={onDownloadAnnotatedPdf}
             disabled={isExportingPdf}
@@ -222,7 +253,7 @@ export default function PlaygroundToolbar({
             ) : (
               <FileDown className="w-4 h-4 text-rose-500 dark:text-rose-600" />
             )}
-            <span>Download Annotated PDF</span>
+            <span className="hidden xs:inline">Download Annotated PDF</span>
           </button>
         </div>
       </div>
