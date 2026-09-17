@@ -257,12 +257,64 @@ mark,
   -webkit-box-decoration-break: clone;
 }
 
+/* Inline Comments with Greyish Background */
+mark.annotated-comment,
+.annotated-comment {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  padding: 0.12rem 0.38rem;
+  border-radius: 0.25rem;
+  border-bottom: 2px dashed #64748b;
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: all 0.15s ease;
+  text-decoration: none !important;
+}
+
+.dark mark.annotated-comment,
+.dark .annotated-comment {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+  border-bottom-color: #94a3b8 !important;
+}
+
+mark.annotated-comment:hover,
+.annotated-comment:hover {
+  background-color: #cbd5e1 !important;
+  filter: brightness(0.96);
+}
+
+.dark mark.annotated-comment:hover,
+.dark .annotated-comment:hover {
+  background-color: #475569 !important;
+  filter: brightness(1.1);
+}
+
+mark.annotated-comment::after,
+.annotated-comment::after {
+  content: ' 💬';
+  font-size: 0.72em;
+  opacity: 0.75;
+  vertical-align: super;
+  pointer-events: none;
+}
+
 .exporting-pdf mark,
 .exporting-pdf .annotated-mark {
   padding: 0.1rem 0.25rem !important;
   border-radius: 0.2rem !important;
   box-decoration-break: clone !important;
   -webkit-box-decoration-break: clone !important;
+}
+
+.exporting-pdf mark.annotated-comment,
+.exporting-pdf .annotated-comment {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-bottom: 1.5px dashed #64748b !important;
+  padding: 0.1rem 0.25rem !important;
+  border-radius: 0.2rem !important;
 }
 
 .exporting-pdf u,

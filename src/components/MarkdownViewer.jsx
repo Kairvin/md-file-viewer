@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import FloatingAnnotationBar from './FloatingAnnotationBar';
 import PlaygroundToolbar from './PlaygroundToolbar';
+import CommentPopover from './CommentPopover';
 
 export default function MarkdownViewer({
   html,
@@ -44,6 +45,19 @@ export default function MarkdownViewer({
   const [hasEdits, setHasEdits] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [isJustSaved, setIsJustSaved] = useState(false);
+
+  // Comment popover state & selection range ref
+  const [commentPopover, setCommentPopover] = useState({
+    isOpen: false,
+    mode: 'view', // 'create' | 'view' | 'edit'
+    top: 0,
+    left: 0,
+    isAbove: false,
+    text: '',
+    selectedText: '',
+    targetElement: null
+  });
+  const savedRangeForCommentRef = useRef(null);
 
   // Storage key for saving Playground edits per file
   const storageKey = `md_playground_saved_${fileName}`;
@@ -360,6 +374,104 @@ export default function MarkdownViewer({
     onPlaygroundEditsChange?.(true);
   };
 
+  // Open comment popover in create mode for selected text
+  const handleOpenAddComment = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      alert('Please select some text first to add a comment.');
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const paper = paperRef.current;
+    if (!paper || !paper.contains(range.commonAncestorContainer)) {
+      return;
+    }
+
+    savedRangeForCommentRef.current = range.cloneRange();
+    const selectedText = range.toString().trim();
+    const rect = range.getBoundingClientRect();
+    const isAbove = rect.bottom + 230 > window.innerHeight && rect.top > 230;
+
+    setCommentPopover({
+      isOpen: true,
+      mode: 'create',
+      top: isAbove ? Math.max(16, rect.top - 8) : rect.bottom + 8,
+      left: Math.max(16, Math.min(window.innerWidth - 320, rect.left + (rect.width / 2) - 140)),
+      isAbove,
+      text: '',
+      selectedText,
+      targetElement: null
+    });
+    setSelectionBox(prev => ({ ...prev, visible: false }));
+  };
+
+  // Save comment: either wrap range as .annotated-comment or update existing element
+  const handleSaveComment = (commentText) => {
+    if (commentPopover.mode === 'create') {
+      const range = savedRangeForCommentRef.current;
+      if (!range || !commentText.trim()) {
+        setCommentPopover(prev => ({ ...prev, isOpen: false }));
+        return;
+      }
+
+      try {
+        const mark = document.createElement('mark');
+        mark.className = 'annotated-comment';
+        mark.setAttribute('data-comment', commentText.trim());
+        mark.title = `Comment: ${commentText.trim()}`;
+        mark.style.backgroundColor = '#e2e8f0';
+        mark.style.color = '#0f172a';
+        mark.style.padding = '0.12rem 0.38rem';
+        mark.style.borderRadius = '0.25rem';
+        mark.style.borderBottom = '2px dashed #64748b';
+        mark.style.cursor = 'pointer';
+
+        const fragment = range.extractContents();
+        mark.appendChild(fragment);
+        range.insertNode(mark);
+
+        window.getSelection()?.removeAllRanges();
+        savedRangeForCommentRef.current = null;
+
+        pushHistorySnapshot();
+        setHasEdits(true);
+        onPlaygroundEditsChange?.(true);
+      } catch (err) {
+        console.error('Failed to create comment annotation:', err);
+      }
+
+      setCommentPopover(prev => ({ ...prev, isOpen: false }));
+    } else if (commentPopover.mode === 'edit') {
+      const el = commentPopover.targetElement;
+      if (el && commentText.trim()) {
+        el.setAttribute('data-comment', commentText.trim());
+        el.title = `Comment: ${commentText.trim()}`;
+        pushHistorySnapshot();
+        setHasEdits(true);
+        onPlaygroundEditsChange?.(true);
+      }
+      setCommentPopover(prev => ({ ...prev, isOpen: false, text: commentText.trim() }));
+    }
+  };
+
+  // Delete comment: unwrap element and keep underlying text
+  const handleDeleteComment = () => {
+    const el = commentPopover.targetElement;
+    if (el && el.parentNode) {
+      const parent = el.parentNode;
+      while (el.firstChild) {
+        parent.insertBefore(el.firstChild, el);
+      }
+      parent.removeChild(el);
+
+      pushHistorySnapshot();
+      setHasEdits(true);
+      onPlaygroundEditsChange?.(true);
+    }
+    setCommentPopover(prev => ({ ...prev, isOpen: false, targetElement: null }));
+  };
+
   const handleResetOriginal = () => {
     if (confirm('Revert document to original Markdown? All saved and unsaved playground edits will be cleared.')) {
       localStorage.removeItem(storageKey);
@@ -367,6 +479,7 @@ export default function MarkdownViewer({
       setHasEdits(false);
       onPlaygroundEditsChange?.(false);
       setSelectionBox({ top: 0, left: 0, visible: false });
+      setCommentPopover(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -456,11 +569,33 @@ export default function MarkdownViewer({
           }
         }
       }
+
+      // 3. Comment click handler
+      const commentEl = e.target.closest('.annotated-comment');
+      if (commentEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        const commentText = commentEl.getAttribute('data-comment') || '';
+        const rect = commentEl.getBoundingClientRect();
+        const isAbove = rect.bottom + 230 > window.innerHeight && rect.top > 230;
+
+        setCommentPopover({
+          isOpen: true,
+          mode: 'view',
+          top: isAbove ? Math.max(16, rect.top - 8) : rect.bottom + 8,
+          left: Math.max(16, Math.min(window.innerWidth - 320, rect.left + (rect.width / 2) - 140)),
+          isAbove,
+          text: commentText,
+          selectedText: commentEl.textContent,
+          targetElement: commentEl
+        });
+        return;
+      }
     };
 
     container.addEventListener('click', handleClick);
     return () => container.removeEventListener('click', handleClick);
-  }, [html]);
+  }, [displayHtml, isPlayground]);
 
   // Render Mermaid diagrams into visual SVG mind maps & flowcharts
   useEffect(() => {
@@ -640,6 +775,7 @@ export default function MarkdownViewer({
           onBold={handleBold}
           onItalic={handleItalic}
           onClearFormat={handleClearFormat}
+          onAddComment={handleOpenAddComment}
           onUndo={handleUndo}
           onRedo={handleRedo}
           onResetOriginal={handleResetOriginal}
@@ -664,9 +800,24 @@ export default function MarkdownViewer({
           onBold={handleBold}
           onItalic={handleItalic}
           onClearFormat={handleClearFormat}
+          onAddComment={handleOpenAddComment}
           onClose={() => setSelectionBox(prev => ({ ...prev, visible: false }))}
         />
       )}
+
+      {/* Comment Popover Box (Add, View, Edit) */}
+      <CommentPopover 
+        isOpen={commentPopover.isOpen}
+        mode={commentPopover.mode}
+        position={{ top: commentPopover.top, left: commentPopover.left, isAbove: commentPopover.isAbove }}
+        commentText={commentPopover.text}
+        selectedText={commentPopover.selectedText}
+        isPlayground={isPlayground}
+        onSave={handleSaveComment}
+        onDelete={handleDeleteComment}
+        onClose={() => setCommentPopover(prev => ({ ...prev, isOpen: false }))}
+        onChangeMode={(newMode) => setCommentPopover(prev => ({ ...prev, mode: newMode }))}
+      />
 
       {/* Reader Paper Viewport - Calibrated padding for mobile/tablet */}
       <main className="py-3 sm:py-6 md:py-8 px-1.5 sm:px-4 md:px-6 flex justify-center min-h-full">

@@ -7,6 +7,7 @@ import {
   Italic as ItalicIcon, 
   Palette, 
   RotateCcw,
+  MessageSquarePlus,
   X
 } from 'lucide-react';
 
@@ -37,6 +38,7 @@ export default function FloatingAnnotationBar({
   onBold,
   onItalic,
   onClearFormat,
+  onAddComment,
   onClose
 }) {
   const [activePicker, setActivePicker] = useState(null); // 'highlight' | 'color' | null
@@ -128,6 +130,18 @@ export default function FloatingAnnotationBar({
         >
           <ItalicIcon className="w-3.5 h-3.5" />
         </button>
+
+        {/* Add Comment */}
+        {onAddComment && (
+          <button
+            onClick={handleAction(onAddComment)}
+            className="p-1.5 hover:bg-slate-800 text-emerald-400 hover:text-emerald-300 rounded-lg transition-colors flex items-center gap-1"
+            title="Add Comment to selection"
+          >
+            <MessageSquarePlus className="w-3.5 h-3.5" />
+            <span className="text-[10px] hidden sm:inline">Comment</span>
+          </button>
+        )}
 
         <div className="h-4 w-px bg-slate-700 mx-0.5" />
 

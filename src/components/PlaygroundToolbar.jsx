@@ -14,7 +14,8 @@ import {
   ChevronDown,
   Info,
   Check,
-  Save
+  Save,
+  MessageSquarePlus
 } from 'lucide-react';
 import { HIGHLIGHT_COLORS, TEXT_COLORS } from './FloatingAnnotationBar';
 
@@ -26,6 +27,7 @@ export default function PlaygroundToolbar({
   onBold,
   onItalic,
   onClearFormat,
+  onAddComment,
   onUndo,
   onRedo,
   onResetOriginal,
@@ -180,6 +182,18 @@ export default function PlaygroundToolbar({
               <ItalicIcon className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* Add Comment */}
+          {onAddComment && (
+            <button
+              onClick={preventBlur(onAddComment)}
+              className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-xs flex items-center gap-1 shadow-2xs"
+              title="Add Comment to selected text"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="text-[11px] hidden sm:inline font-medium">Comment</span>
+            </button>
+          )}
 
           {/* History Undo / Redo */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
