@@ -230,7 +230,7 @@ export default function PlaygroundToolbar({
               {isJustSaved ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Saved ✓</span>
+                  <span>Saved</span>
                 </>
               ) : (
                 <>
