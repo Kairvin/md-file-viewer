@@ -30,7 +30,9 @@ export default function PlaygroundToolbar({
   onResetOriginal,
   onDownloadAnnotatedPdf,
   isExportingPdf,
-  hasEdits
+  hasEdits,
+  canUndo = false,
+  canRedo = false
 }) {
   const [activeHighlightColor, setActiveHighlightColor] = useState('#fef08a');
   const [showColorDropdown, setShowColorDropdown] = useState(false);
@@ -180,15 +182,17 @@ export default function PlaygroundToolbar({
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
             <button
               onClick={preventBlur(onUndo)}
-              className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 transition-colors text-xs"
-              title="Undo Edit (Ctrl/Cmd + Z)"
+              disabled={!canUndo}
+              className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 transition-colors text-xs disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-700 dark:disabled:hover:text-slate-300 disabled:cursor-not-allowed"
+              title={canUndo ? "Undo (Ctrl/Cmd + Z)" : "Nothing to undo"}
             >
               <Undo2 className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={preventBlur(onRedo)}
-              className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 transition-colors text-xs"
-              title="Redo Edit"
+              disabled={!canRedo}
+              className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 transition-colors text-xs disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-700 dark:disabled:hover:text-slate-300 disabled:cursor-not-allowed"
+              title={canRedo ? "Redo (Ctrl/Cmd + Shift + Z)" : "Nothing to redo"}
             >
               <Redo2 className="w-3.5 h-3.5" />
             </button>

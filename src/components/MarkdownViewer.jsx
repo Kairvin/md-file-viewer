@@ -97,6 +97,69 @@ export default function MarkdownViewer({
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
   }, [isPlayground]);
 
+  // Dedicated History Stack for robust Undo & Redo across typing and all formatting
+  const historyStackRef = useRef([]);
+  const historyIndexRef = useRef(-1);
+  const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
+  const isInternalHistoryUpdateRef = useRef(false);
+  const inputDebounceTimerRef = useRef(null);
+
+  // Snapshot recording function
+  const pushHistorySnapshot = (explicitHtml) => {
+    if (isInternalHistoryUpdateRef.current) return;
+    const paper = paperRef.current;
+    if (!paper) return;
+    const body = paper.querySelector('.markdown-body');
+    if (!body) return;
+
+    const currentHtml = explicitHtml !== undefined ? explicitHtml : body.innerHTML;
+    const stack = historyStackRef.current;
+    const currentIndex = historyIndexRef.current;
+
+    // Avoid pushing duplicate consecutive states
+    if (stack.length > 0 && currentIndex >= 0 && stack[currentIndex] === currentHtml) {
+      return;
+    }
+
+    const newStack = stack.slice(0, currentIndex + 1);
+    newStack.push(currentHtml);
+    if (newStack.length > 50) {
+      newStack.shift();
+    }
+
+    historyStackRef.current = newStack;
+    historyIndexRef.current = newStack.length - 1;
+
+    setHistoryState({
+      canUndo: newStack.length > 1,
+      canRedo: false
+    });
+  };
+
+  // Seed history stack on mount or reset
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (paperRef.current) {
+        const body = paperRef.current.querySelector('.markdown-body');
+        if (body) {
+          historyStackRef.current = [body.innerHTML];
+          historyIndexRef.current = 0;
+          setHistoryState({ canUndo: false, canRedo: false });
+        }
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [resetKey, html]);
+
+  // Handle typing input inside contentEditable paper with debounce
+  const handleContentInput = () => {
+    setHasEdits(true);
+    if (inputDebounceTimerRef.current) clearTimeout(inputDebounceTimerRef.current);
+    inputDebounceTimerRef.current = setTimeout(() => {
+      pushHistorySnapshot();
+    }, 350);
+  };
+
   // Format Handlers
   const handleHighlight = (color) => {
     const selection = window.getSelection();
@@ -109,6 +172,7 @@ export default function MarkdownViewer({
     if (!color) {
       document.execCommand('removeFormat', false, null);
       setSelectionBox(prev => ({ ...prev, visible: false }));
+      pushHistorySnapshot();
       return;
     }
 
@@ -131,6 +195,7 @@ export default function MarkdownViewer({
     } catch (e) {
       document.execCommand('hiliteColor', false, color);
     }
+    pushHistorySnapshot();
   };
 
   const handleTextColor = (color) => {
@@ -143,6 +208,7 @@ export default function MarkdownViewer({
 
     if (!color) {
       document.execCommand('foreColor', false, '#0f172a');
+      pushHistorySnapshot();
       return;
     }
 
@@ -162,40 +228,88 @@ export default function MarkdownViewer({
     } catch (e) {
       document.execCommand('foreColor', false, color);
     }
+    pushHistorySnapshot();
   };
 
   const handleUnderline = () => {
     setHasEdits(true);
     document.execCommand('underline', false, null);
+    pushHistorySnapshot();
   };
 
   const handleStrikethrough = () => {
     setHasEdits(true);
     document.execCommand('strikeThrough', false, null);
+    pushHistorySnapshot();
   };
 
   const handleBold = () => {
     setHasEdits(true);
     document.execCommand('bold', false, null);
+    pushHistorySnapshot();
   };
 
   const handleItalic = () => {
     setHasEdits(true);
     document.execCommand('italic', false, null);
+    pushHistorySnapshot();
   };
 
   const handleClearFormat = () => {
     setHasEdits(true);
     document.execCommand('removeFormat', false, null);
     setSelectionBox(prev => ({ ...prev, visible: false }));
+    pushHistorySnapshot();
   };
 
   const handleUndo = () => {
-    document.execCommand('undo', false, null);
+    const stack = historyStackRef.current;
+    const currentIndex = historyIndexRef.current;
+    if (currentIndex <= 0) return;
+
+    const newIndex = currentIndex - 1;
+    historyIndexRef.current = newIndex;
+    const previousHtml = stack[newIndex];
+
+    const paper = paperRef.current;
+    if (paper) {
+      const body = paper.querySelector('.markdown-body');
+      if (body) {
+        isInternalHistoryUpdateRef.current = true;
+        body.innerHTML = previousHtml;
+        isInternalHistoryUpdateRef.current = false;
+      }
+    }
+
+    setHistoryState({
+      canUndo: newIndex > 0,
+      canRedo: true
+    });
   };
 
   const handleRedo = () => {
-    document.execCommand('redo', false, null);
+    const stack = historyStackRef.current;
+    const currentIndex = historyIndexRef.current;
+    if (currentIndex >= stack.length - 1) return;
+
+    const newIndex = currentIndex + 1;
+    historyIndexRef.current = newIndex;
+    const nextHtml = stack[newIndex];
+
+    const paper = paperRef.current;
+    if (paper) {
+      const body = paper.querySelector('.markdown-body');
+      if (body) {
+        isInternalHistoryUpdateRef.current = true;
+        body.innerHTML = nextHtml;
+        isInternalHistoryUpdateRef.current = false;
+      }
+    }
+
+    setHistoryState({
+      canUndo: true,
+      canRedo: newIndex < stack.length - 1
+    });
   };
 
   const handleResetOriginal = () => {
@@ -205,6 +319,28 @@ export default function MarkdownViewer({
       setSelectionBox({ top: 0, left: 0, visible: false });
     }
   };
+
+  // Keyboard shortcut listener for Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z
+  useEffect(() => {
+    if (!isPlayground) return;
+
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlayground]);
 
   // Setup click handler for copy code buttons & mermaid toggle buttons
   useEffect(() => {
@@ -437,6 +573,8 @@ export default function MarkdownViewer({
           onDownloadAnnotatedPdf={onDirectPdfDownload}
           isExportingPdf={isExportingPdf}
           hasEdits={hasEdits}
+          canUndo={historyState.canUndo}
+          canRedo={historyState.canRedo}
         />
       )}
 
@@ -501,7 +639,7 @@ export default function MarkdownViewer({
               className="markdown-body w-full break-words outline-none"
               contentEditable={isPlayground}
               suppressContentEditableWarning={true}
-              onInput={() => setHasEdits(true)}
+              onInput={handleContentInput}
               dangerouslySetInnerHTML={{ __html: html }} 
             />
           ) : (
