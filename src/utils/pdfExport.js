@@ -22,59 +22,118 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
 
   const safeName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
 
-  // Store parent scroll position so we can capture from the top
-  const scrollParent = element.closest('#preview-container') || element.parentElement;
-  const originalScrollTop = scrollParent ? scrollParent.scrollTop : 0;
-  if (scrollParent) {
-    scrollParent.scrollTop = 0;
-  }
+  // 1. Create a dedicated off-screen staging wrapper
+  // This completely isolates the export from the screen size, split view, or mobile viewport.
+  const stagingWrapper = document.createElement('div');
+  stagingWrapper.id = 'pdf-render-staging-wrapper';
+  stagingWrapper.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: -9999px;
+    width: 750px;
+    background: #ffffff;
+    color: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    z-index: -9999;
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+    pointer-events: none;
+    opacity: 1;
+  `;
 
-  // 1. Temporarily apply high-contrast print styling directly to the live DOM element
-  element.classList.add('exporting-pdf');
+  // 2. Clone the element deeply
+  const clone = element.cloneNode(true);
+  clone.id = 'preview-paper-pdf-clone';
+  clone.classList.add('exporting-pdf');
 
-  // Small delay to let browser reflow styles before html2canvas captures
-  await new Promise(resolve => setTimeout(resolve, 100));
+  // Strip contentEditable from clone so no cursor or edit outlines are captured
+  clone.removeAttribute('contenteditable');
+  clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
 
-  // 2. Configure html2pdf with clean margins and no empty gaps
-  const opt = {
-    margin: [10, 10, 10, 10], // 10mm clean margins
-    filename: safeName,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      letterRendering: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      width: 660,
-      windowWidth: 660,
-      scrollY: 0,
-      scrollX: 0
-    },
-    jsPDF: {
-      unit: 'mm',
-      format: 'a4',
-      orientation: 'portrait'
-    },
-    pagebreak: {
-      mode: ['css', 'legacy'],
-      avoid: ['p', 'li', 'h1', 'h2', 'h3', 'h4', 'blockquote', 'tr', '.code-block-wrapper', '.mermaid-container', '.markdown-alert']
+  // 3. Transfer rendered SVG dimensions (Mermaid diagrams) from live DOM to clone
+  const liveSvgs = element.querySelectorAll('svg');
+  const cloneSvgs = clone.querySelectorAll('svg');
+  liveSvgs.forEach((liveSvg, idx) => {
+    const cloneSvg = cloneSvgs[idx];
+    if (cloneSvg) {
+      const rect = liveSvg.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        cloneSvg.setAttribute('width', String(Math.round(rect.width)));
+        cloneSvg.setAttribute('height', String(Math.round(rect.height)));
+        cloneSvg.style.width = `${Math.round(rect.width)}px`;
+        cloneSvg.style.maxWidth = '100%';
+        cloneSvg.style.height = 'auto';
+      }
     }
-  };
+  });
+
+  // 4. Remove UI-only controls from clone (copy code buttons, toggle buttons, no-print elements)
+  clone.querySelectorAll('button, .copy-code-btn, .mermaid-toggle-btn, .anchor-link, .no-print').forEach(el => el.remove());
+
+  stagingWrapper.appendChild(clone);
+  document.body.appendChild(stagingWrapper);
 
   try {
-    await html2pdf().set(opt).from(element).save();
+    // 5. Ensure all images inside clone are resolved before capturing
+    const images = clone.querySelectorAll('img');
+    await Promise.all(Array.from(images).map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+    }));
+
+    // Reflow delay to ensure fonts and layout settle
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    // 6. Production-grade html2pdf configuration
+    const opt = {
+      margin: [10, 10, 10, 10], // 10mm clean margins for standard A4
+      filename: safeName,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: {
+        scale: 2, // 2x high-DPI retina sharpness
+        useCORS: true,
+        letterRendering: false, // CRITICAL: false prevents overlapping and scrambled text
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: 750,
+        windowWidth: 750,
+        scrollY: 0,
+        scrollX: 0
+      },
+      jsPDF: {
+        unit: 'mm',
+        format: 'a4',
+        orientation: 'portrait'
+      },
+      pagebreak: {
+        mode: ['css', 'legacy'],
+        avoid: [
+          '.mermaid-container', 
+          '.code-block-wrapper', 
+          '.markdown-alert', 
+          '.table-container', 
+          'figure', 
+          'h1', 
+          'h2', 
+          'h3',
+          'blockquote'
+        ]
+      }
+    };
+
+    await html2pdf().set(opt).from(clone).save();
     return true;
   } catch (error) {
-    console.error('Direct PDF export error:', error);
+    console.error('Direct PDF export error, falling back to native vector print:', error);
     printToPdf(filename.replace(/\.pdf$/, ''));
     return false;
   } finally {
-    // 3. Clean up export styling and restore scroll
-    element.classList.remove('exporting-pdf');
-    if (scrollParent) {
-      scrollParent.scrollTop = originalScrollTop;
-    }
+    // 7. Always remove the staging container from DOM
+    stagingWrapper.remove();
   }
 }
 
