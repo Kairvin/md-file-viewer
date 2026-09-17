@@ -71,7 +71,7 @@ export default function FloatingAnnotationBar({
         <button
           onClick={handleAction(() => setActivePicker(activePicker === 'highlight' ? null : 'highlight'))}
           className={`p-1.5 rounded-lg flex items-center gap-1 transition-colors ${
-            activePicker === 'highlight' ? 'bg-amber-500 text-slate-950 font-bold' : 'hover:bg-slate-800 text-amber-300'
+            activePicker === 'highlight' ? 'bg-slate-800 text-amber-400 font-medium' : 'hover:bg-slate-800 text-slate-300 hover:text-white'
           }`}
           title="Highlight Text"
         >
@@ -83,7 +83,7 @@ export default function FloatingAnnotationBar({
         <button
           onClick={handleAction(() => setActivePicker(activePicker === 'color' ? null : 'color'))}
           className={`p-1.5 rounded-lg flex items-center gap-1 transition-colors ${
-            activePicker === 'color' ? 'bg-blue-500 text-white font-bold' : 'hover:bg-slate-800 text-blue-300'
+            activePicker === 'color' ? 'bg-slate-800 text-blue-400 font-medium' : 'hover:bg-slate-800 text-slate-300 hover:text-white'
           }`}
           title="Text Color"
         >

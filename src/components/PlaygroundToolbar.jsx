@@ -56,13 +56,13 @@ export default function PlaygroundToolbar({
           e.preventDefault();
         }
       }}
-      className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-indigo-200 dark:border-indigo-950 px-3 sm:px-6 py-2 shadow-sm transition-colors"
+      className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2 shadow-xs transition-colors"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         {/* Left: Mode Title & Info */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold text-xs border border-indigo-500/20 shadow-xs">
-            <Sparkles className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-semibold text-xs border border-slate-200/80 dark:border-slate-700/80 shadow-xs">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             <span>Playground & Annotator</span>
           </div>
           <span className="hidden md:inline-flex text-[11px] text-slate-400 items-center gap-1">
@@ -83,7 +83,7 @@ export default function PlaygroundToolbar({
                   onClick={preventBlur(() => handleApplyHighlight(c.hex))}
                   style={{ backgroundColor: c.hex, borderColor: c.border }}
                   className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 shadow-xs flex items-center justify-center ${
-                    activeHighlightColor === c.hex ? 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-slate-900 scale-105' : ''
+                    activeHighlightColor === c.hex ? 'ring-2 ring-slate-800 dark:ring-slate-200 ring-offset-1 dark:ring-offset-slate-900 scale-105' : ''
                   }`}
                   title={`Highlight: ${c.name}`}
                 />
@@ -210,13 +210,13 @@ export default function PlaygroundToolbar({
           <button
             onClick={onDownloadAnnotatedPdf}
             disabled={isExportingPdf}
-            className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-red-500 via-pink-500 to-indigo-600 hover:from-red-600 hover:to-indigo-700 text-white font-semibold text-xs shadow-md shadow-pink-500/20 flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-50"
+            className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white font-medium text-xs shadow-sm border border-slate-800 dark:border-slate-200 flex items-center gap-2 active:scale-95 transition-all disabled:opacity-50"
             title="Download this annotated & edited document as a high-contrast PDF"
           >
             {isExportingPdf ? (
               <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             ) : (
-              <FileDown className="w-4 h-4" />
+              <FileDown className="w-4 h-4 text-rose-500 dark:text-rose-600" />
             )}
             <span>Download Annotated PDF</span>
           </button>

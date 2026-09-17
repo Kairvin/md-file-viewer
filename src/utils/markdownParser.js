@@ -73,8 +73,8 @@ export function parseMarkdown(markdownText) {
         <div class="mermaid-container my-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 p-5 sm:p-7 shadow-lg transition-all" data-mermaid="${encodedRaw}">
           <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800/80 text-xs select-none">
             <div class="flex items-center gap-2 font-medium text-slate-700 dark:text-slate-200">
-              <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-              <span class="font-semibold tracking-wide uppercase text-[11px] text-indigo-600 dark:text-indigo-400">Concept Map / Diagram</span>
+              <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+              <span class="font-semibold tracking-wide uppercase text-[11px] text-blue-600 dark:text-blue-400">Concept Map / Diagram</span>
             </div>
             <div class="flex items-center gap-2">
               <button 
@@ -94,7 +94,7 @@ export function parseMarkdown(markdownText) {
           </div>
           <div class="mermaid-render flex justify-center items-center py-4 w-full overflow-x-auto min-h-[140px]">
             <div class="text-slate-400 text-xs flex items-center gap-2">
-              <span class="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></span>
+              <span class="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>
               <span>Rendering concept map...</span>
             </div>
           </div>

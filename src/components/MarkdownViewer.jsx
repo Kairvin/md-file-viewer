@@ -467,19 +467,19 @@ export default function MarkdownViewer({
           style={{ fontSize: `${fontSize}px` }}
           className={`${widthClasses[columnWidth] || widthClasses['95%']} bg-[var(--bg-primary)] text-[var(--text-main)] rounded-xl sm:rounded-2xl border ${
             isPlayground 
-              ? 'border-indigo-400 dark:border-indigo-600 ring-4 ring-indigo-500/15 shadow-indigo-500/10' 
-              : 'border-slate-200/80 dark:border-slate-800/80 shadow-slate-200/50 dark:shadow-none'
-          } p-3.5 sm:p-7 md:p-12 shadow-lg transition-all duration-200 max-w-full overflow-hidden relative`}
+              ? 'border-slate-300 dark:border-slate-700 ring-1 ring-slate-400/25 dark:ring-slate-600/30 shadow-md shadow-slate-200/50 dark:shadow-none' 
+              : 'border-slate-200/80 dark:border-slate-800/80 shadow-lg shadow-slate-200/50 dark:shadow-none'
+          } p-3.5 sm:p-7 md:p-12 transition-all duration-200 max-w-full overflow-hidden relative`}
         >
           {/* Subtle Switch to Playground Banner in Preview Mode */}
           {!isPlayground && onTogglePlayground && (
             <div className="flex justify-end mb-3 no-print">
               <button
                 onClick={onTogglePlayground}
-                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 text-xs font-medium flex items-center gap-1.5 transition-all shadow-xs"
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-all shadow-xs"
                 title="Switch to interactive text highlighter, in-place editor, and styling tools"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5 text-blue-500" />
                 <span>Annotate & Edit in Playground</span>
               </button>
             </div>
@@ -487,9 +487,9 @@ export default function MarkdownViewer({
 
           {/* Active Playground Mode Banner inside paper */}
           {isPlayground && (
-            <div className="flex items-center justify-between mb-4 pb-2 border-b border-indigo-100 dark:border-indigo-950/60 text-xs text-indigo-600 dark:text-indigo-400 no-print select-none">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 no-print select-none">
               <span className="font-semibold flex items-center gap-1.5">
-                <PenTool className="w-3.5 h-3.5" />
+                <PenTool className="w-3.5 h-3.5 text-blue-500" />
                 <span>Playground Mode: Direct in-place editing & highlighting active</span>
               </span>
               <span className="text-[11px] text-slate-400 hidden sm:inline">All edits will be exported to PDF</span>
