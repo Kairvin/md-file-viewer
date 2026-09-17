@@ -71,6 +71,76 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
   // 4. Remove UI-only controls from clone (copy code buttons, toggle buttons, no-print elements)
   clone.querySelectorAll('button, .copy-code-btn, .mermaid-toggle-btn, .anchor-link, .no-print').forEach(el => el.remove());
 
+  // 5. Exclude comments completely from the downloaded PDF
+  // A. Clean elements with .annotated-comment or [data-comment]
+  const commentElements = clone.querySelectorAll('.annotated-comment, [data-comment]');
+  commentElements.forEach(el => {
+    const bg = el.style.backgroundColor;
+    const hasHighlightColor = bg && 
+      bg !== 'rgb(241, 245, 249)' && 
+      bg !== '#f1f5f9' && 
+      bg !== 'rgb(51, 65, 85)' && 
+      bg !== '#334155' && 
+      bg !== 'transparent' &&
+      bg !== '';
+    const isHighlighted = el.classList.contains('annotated-mark') || hasHighlightColor;
+
+    if (isHighlighted) {
+      // Keep highlight background, but completely strip all comment behavior & styling
+      el.classList.remove('annotated-comment');
+      el.removeAttribute('data-comment');
+      el.removeAttribute('title');
+      el.style.border = 'none';
+      el.style.borderBottom = 'none';
+      el.style.cursor = 'inherit';
+    } else {
+      // It was purely a comment annotation without a highlight - unwrap into plain text
+      const parent = el.parentNode;
+      if (parent) {
+        while (el.firstChild) {
+          parent.insertBefore(el.firstChild, el);
+        }
+        parent.removeChild(el);
+      }
+    }
+  });
+
+  // B. Also clean any remaining mark elements that might have default comment backgrounds without a real highlight
+  clone.querySelectorAll('mark').forEach(m => {
+    const bg = m.style.backgroundColor;
+    const isCommentBg = !bg || bg === '#f1f5f9' || bg === 'rgb(241, 245, 249)' || bg === '#334155' || bg === 'rgb(51, 65, 85)' || bg === 'transparent';
+    if (!m.classList.contains('annotated-mark') && isCommentBg) {
+      const parent = m.parentNode;
+      if (parent) {
+        while (m.firstChild) {
+          parent.insertBefore(m.firstChild, m);
+        }
+        parent.removeChild(m);
+      }
+    }
+  });
+
+  // 6. Ensure pixel-perfect alignment for highlighted and underlined elements in PDF
+  clone.querySelectorAll('mark, .annotated-mark').forEach(mark => {
+    mark.style.display = 'inline';
+    mark.style.lineHeight = 'inherit';
+    mark.style.verticalAlign = 'baseline';
+    mark.style.boxDecorationBreak = 'slice';
+    mark.style.webkitBoxDecorationBreak = 'slice';
+    mark.style.padding = '0 3px';
+    mark.style.borderRadius = '2px';
+  });
+
+  clone.querySelectorAll('u, [style*="text-decoration: underline"], [style*="text-decoration:underline"]').forEach(u => {
+    u.style.display = 'inline';
+    u.style.lineHeight = 'inherit';
+    u.style.verticalAlign = 'baseline';
+    u.style.textDecoration = 'underline';
+    u.style.textUnderlineOffset = '2.5px';
+    u.style.textDecorationThickness = '1.5px';
+    u.style.textDecorationSkipInk = 'none';
+  });
+
   stagingWrapper.appendChild(clone);
   document.body.appendChild(stagingWrapper);
 

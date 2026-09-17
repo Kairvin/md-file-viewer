@@ -254,10 +254,12 @@ mark,
 .annotated-mark {
   background-color: #fef08a;
   color: inherit !important;
-  padding: 0.1rem 0.32rem;
+  padding: 0.08em 0.28em;
   border-radius: 0.25rem;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+  line-height: inherit;
+  display: inline;
 }
 
 /* Inline Comments - Production Grade Refined Typography */
@@ -265,7 +267,7 @@ mark.annotated-comment,
 .annotated-comment {
   background-color: #f1f5f9;
   color: inherit !important;
-  padding: 0.1rem 0.32rem;
+  padding: 0.08em 0.28em;
   border-radius: 0.25rem;
   border-bottom: 2px solid #94a3b8;
   cursor: pointer;
@@ -274,6 +276,7 @@ mark.annotated-comment,
   transition: all 0.15s ease;
   text-decoration: none !important;
   display: inline;
+  line-height: inherit;
 }
 
 /* When highlighted text has a comment: preserve highlight background, add refined border */
@@ -345,49 +348,80 @@ mark mark,
   box-shadow: none !important;
 }
 
+/* PDF Export: Highlight and Underline Alignment */
 .exporting-pdf mark,
 .exporting-pdf .annotated-mark {
-  padding: 0.1rem 0.25rem !important;
-  border-radius: 0.2rem !important;
-  box-decoration-break: clone !important;
-  -webkit-box-decoration-break: clone !important;
+  display: inline !important;
+  padding: 0 3px !important;
+  margin: 0 !important;
+  border-radius: 2px !important;
+  line-height: inherit !important;
+  vertical-align: baseline !important;
+  box-decoration-break: slice !important;
+  -webkit-box-decoration-break: slice !important;
 }
 
+/* Exclude all comment styling and comment pills in PDF export */
 .exporting-pdf mark.annotated-comment,
 .exporting-pdf .annotated-comment {
-  border-bottom: 1.5px solid #64748b !important;
-  padding: 0.1rem 0.25rem !important;
-  border-radius: 0.2rem !important;
+  border: none !important;
+  border-bottom: none !important;
 }
 
-/* In exported PDF: Render the comment text clearly in an elegant review pill */
+.exporting-pdf mark.annotated-comment:not(.annotated-mark),
+.exporting-pdf .annotated-comment:not(.annotated-mark) {
+  background-color: transparent !important;
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  border-bottom: none !important;
+}
+
 .exporting-pdf mark.annotated-comment::after,
 .exporting-pdf .annotated-comment::after {
-  content: ' [💬 ' attr(data-comment) ']' !important;
-  font-size: 0.74em !important;
-  font-weight: 500 !important;
-  color: #334155 !important;
-  background-color: #f1f5f9 !important;
-  border: 1px solid #cbd5e1 !important;
-  border-radius: 4px !important;
-  padding: 1px 5px !important;
-  margin-left: 4px !important;
-  display: inline-block !important;
-  font-style: normal !important;
-  -webkit-mask: none !important;
-  mask: none !important;
-  opacity: 1 !important;
-  width: auto !important;
-  height: auto !important;
-  vertical-align: baseline !important;
-  box-decoration-break: clone !important;
-  -webkit-box-decoration-break: clone !important;
+  content: none !important;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
 }
 
+/* Underline alignment */
 .exporting-pdf u,
-u {
+.exporting-pdf [style*="text-decoration: underline"],
+.exporting-pdf [style*="text-decoration:underline"],
+u,
+[style*="text-decoration: underline"] {
+  display: inline !important;
   text-decoration: underline !important;
-  text-underline-offset: 3px !important;
+  text-decoration-thickness: 1.5px !important;
+  text-underline-offset: 2.5px !important;
+  text-decoration-skip-ink: none !important;
+  line-height: inherit !important;
+  vertical-align: baseline !important;
+}
+
+/* Combined highlight + underline seamless alignment */
+.exporting-pdf mark u,
+.exporting-pdf u mark,
+.exporting-pdf .annotated-mark u,
+.exporting-pdf u .annotated-mark,
+mark u,
+u mark,
+.annotated-mark u,
+u .annotated-mark {
+  display: inline !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 1.5px !important;
+  text-underline-offset: 2.5px !important;
+  text-decoration-skip-ink: none !important;
+  line-height: inherit !important;
+  vertical-align: baseline !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 
 .exporting-pdf s,
@@ -665,6 +699,12 @@ del {
   /* Annotation preservation in print */
   mark,
   .annotated-mark {
+    display: inline !important;
+    padding: 0 3px !important;
+    margin: 0 !important;
+    border-radius: 2px !important;
+    line-height: inherit !important;
+    vertical-align: baseline !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -674,28 +714,58 @@ del {
     print-color-adjust: exact !important;
   }
 
-  /* Render comment text in vector print */
+  /* Exclude comments from print completely */
   mark.annotated-comment::after,
   .annotated-comment::after {
-    content: ' [💬 ' attr(data-comment) ']' !important;
-    font-size: 0.74em !important;
-    font-weight: 500 !important;
-    color: #334155 !important;
-    background-color: #f1f5f9 !important;
-    border: 1px solid #cbd5e1 !important;
-    border-radius: 4px !important;
-    padding: 1px 5px !important;
-    margin-left: 4px !important;
-    display: inline-block !important;
-    font-style: normal !important;
-    -webkit-mask: none !important;
-    mask: none !important;
-    opacity: 1 !important;
-    width: auto !important;
-    height: auto !important;
+    content: none !important;
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+
+  mark.annotated-comment,
+  .annotated-comment {
+    border: none !important;
+    border-bottom: none !important;
+  }
+
+  mark.annotated-comment:not(.annotated-mark),
+  .annotated-comment:not(.annotated-mark) {
+    background-color: transparent !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    border-bottom: none !important;
+  }
+
+  /* Underline alignment in print */
+  u,
+  [style*="text-decoration: underline"],
+  [style*="text-decoration:underline"] {
+    display: inline !important;
+    text-decoration: underline !important;
+    text-decoration-thickness: 1.5px !important;
+    text-underline-offset: 2.5px !important;
+    text-decoration-skip-ink: none !important;
+    line-height: inherit !important;
     vertical-align: baseline !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+  }
+
+  mark u,
+  u mark,
+  .annotated-mark u,
+  u .annotated-mark {
+    display: inline !important;
+    text-decoration: underline !important;
+    text-decoration-thickness: 1.5px !important;
+    text-underline-offset: 2.5px !important;
+    text-decoration-skip-ink: none !important;
+    line-height: inherit !important;
+    vertical-align: baseline !important;
   }
 
   /* Reset theme variables to high-contrast print values */
