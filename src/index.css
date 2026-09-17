@@ -1,0 +1,486 @@
+@import 'katex/dist/katex.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply transition-colors duration-200 antialiased font-sans;
+  }
+}
+
+/* -------------------------------------------------------------
+   THEME STYLING PRESETS
+---------------------------------------------------------------- */
+
+/* Theme 1: Modern Light */
+.theme-modern {
+  --bg-primary: #ffffff;
+  --bg-surface: #f8fafc;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+  --accent-color: #2563eb;
+  --inline-code-bg: #f1f5f9;
+  --inline-code-text: #0f172a;
+}
+
+/* Theme 2: GitHub Dark */
+.theme-github-dark {
+  --bg-primary: #0d1117;
+  --bg-surface: #161b22;
+  --text-main: #e6edf3;
+  --text-muted: #8b949e;
+  --border-color: #30363d;
+  --accent-color: #58a6ff;
+  --inline-code-bg: #21262d;
+  --inline-code-text: #f0f6fc;
+}
+
+/* Theme 3: Editorial Sepia */
+.theme-sepia {
+  --bg-primary: #fbf9f4;
+  --bg-surface: #f6f2e8;
+  --text-main: #2d261e;
+  --text-muted: #796c5e;
+  --border-color: #e6decb;
+  --accent-color: #b45309;
+  --inline-code-bg: #ede4d1;
+  --inline-code-text: #433423;
+  font-family: 'Charter', 'Merriweather', 'Georgia', serif;
+}
+
+/* Theme 4: Midnight Obsidian */
+.theme-obsidian {
+  --bg-primary: #090d16;
+  --bg-surface: #111726;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --border-color: #1e293b;
+  --accent-color: #38bdf8;
+  --inline-code-bg: #1e293b;
+  --inline-code-text: #38bdf8;
+}
+
+/* -------------------------------------------------------------
+   MARKDOWN TYPOGRAPHY STYLING
+---------------------------------------------------------------- */
+
+.markdown-body {
+  color: var(--text-main);
+  line-height: 1.75;
+}
+
+.markdown-body h1 {
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  margin-top: 1.5rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.markdown-body h2 {
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2rem;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.markdown-body h3 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.markdown-body h4 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body p {
+  margin-bottom: 1.25rem;
+}
+
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.markdown-body li {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-bottom: 0;
+}
+
+.markdown-body hr {
+  height: 1px;
+  background-color: var(--border-color);
+  border: none;
+  margin: 2.5rem 0;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid var(--accent-color);
+  padding: 0.75rem 1.25rem;
+  margin: 1.25rem 0;
+  border-radius: 0 0.5rem 0.5rem 0;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.markdown-body blockquote > p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body a {
+  color: var(--accent-color);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+
+.markdown-body a:hover {
+  opacity: 0.8;
+}
+
+.markdown-body code:not(pre code) {
+  background-color: var(--inline-code-bg);
+  color: var(--inline-code-text);
+  padding: 0.18rem 0.4rem;
+  border-radius: 0.375rem;
+  font-size: 0.875em;
+  font-family: 'JetBrains Mono', 'Menlo', 'Monaco', monospace;
+  border: 1px solid var(--border-color);
+}
+
+.markdown-body kbd {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.375rem;
+  font-size: 0.8em;
+  font-family: monospace;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+}
+
+.markdown-body img {
+  border-radius: 0.75rem;
+  margin: 1.5rem auto;
+  max-width: 100%;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Custom Checkboxes */
+.markdown-body input[type="checkbox"] {
+  accent-color: var(--accent-color);
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.5rem;
+  vertical-align: -2px;
+  border-radius: 4px;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}
+
+/* -------------------------------------------------------------
+   DIRECT PDF CAPTURE OVERRIDES (NO TEXT CLIPPING / NO SLICING)
+---------------------------------------------------------------- */
+
+.exporting-pdf {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+  border: none !important;
+  box-sizing: border-box !important;
+  width: 660px !important;
+  max-width: 660px !important;
+  margin: 0 auto !important;
+  padding: 0 10px !important;
+  overflow-x: hidden !important;
+  font-size: 13.5px !important;
+  line-height: 1.6 !important;
+}
+
+.exporting-pdf * {
+  box-sizing: border-box !important;
+  color: #0f172a !important;
+}
+
+/* Prevent text lines from being sliced in half horizontally across pages */
+.exporting-pdf p,
+.exporting-pdf li,
+.exporting-pdf blockquote {
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+  margin-top: 0.35rem !important;
+  margin-bottom: 0.65rem !important;
+  line-height: 1.65 !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Headings stay attached to following text, no orphan headings */
+.exporting-pdf h1,
+.exporting-pdf h2,
+.exporting-pdf h3,
+.exporting-pdf h4,
+.exporting-pdf h5,
+.exporting-pdf h6 {
+  color: #0f172a !important;
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+  break-after: avoid !important;
+  page-break-after: avoid !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.exporting-pdf h1 {
+  font-size: 1.75rem !important;
+  margin-top: 1.2rem !important;
+  margin-bottom: 0.5rem !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  padding-bottom: 0.3rem !important;
+}
+
+.exporting-pdf h2 {
+  font-size: 1.35rem !important;
+  margin-top: 1rem !important;
+  margin-bottom: 0.4rem !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  padding-bottom: 0.25rem !important;
+}
+
+.exporting-pdf h3 {
+  font-size: 1.15rem !important;
+  margin-top: 0.8rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+.exporting-pdf a {
+  color: #2563eb !important;
+  text-decoration: underline !important;
+}
+
+.exporting-pdf table {
+  width: 100% !important;
+  max-width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 0.8rem 0 !important;
+}
+
+.exporting-pdf th {
+  background-color: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+}
+
+.exporting-pdf td {
+  border: 1px solid #e2e8f0 !important;
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+}
+
+.exporting-pdf .markdown-alert {
+  box-shadow: none !important;
+  margin: 0.8rem 0 !important;
+  padding: 10px 14px !important;
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+}
+
+.exporting-pdf .code-block-wrapper {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  box-shadow: none !important;
+  margin: 0.8rem 0 !important;
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+  max-width: 100% !important;
+}
+
+.exporting-pdf .code-block-wrapper pre,
+.exporting-pdf .code-block-wrapper code {
+  white-space: pre-wrap !important;
+  word-break: break-all !important;
+}
+
+.exporting-pdf .mermaid-container {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: none !important;
+  margin: 0.8rem 0 !important;
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+  max-width: 100% !important;
+}
+
+.exporting-pdf .mermaid-container svg {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+.exporting-pdf .mermaid-container svg text,
+.exporting-pdf .mermaid-container svg span {
+  fill: #0f172a !important;
+  color: #0f172a !important;
+}
+
+.exporting-pdf button,
+.exporting-pdf .copy-code-btn,
+.exporting-pdf .mermaid-toggle-btn,
+.exporting-pdf .anchor-link {
+  display: none !important;
+}
+
+/* -------------------------------------------------------------
+   PRINT / PDF VECTOR OPTIMIZATION
+---------------------------------------------------------------- */
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 10mm 12mm;
+  }
+
+  html, 
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Reset theme variables to high-contrast print values */
+  :root,
+  .theme-modern,
+  .theme-github-dark,
+  .theme-sepia,
+  .theme-obsidian {
+    --bg-primary: #ffffff !important;
+    --text-main: #0f172a !important;
+    --border-color: #cbd5e1 !important;
+    --accent-color: #2563eb !important;
+    --inline-code-bg: #f1f5f9 !important;
+    --inline-code-text: #0f172a !important;
+  }
+
+  /* Hide app chrome, navigation, toolbars, outlines, sidebars */
+  header, 
+  nav, 
+  #navbar, 
+  #toc-drawer, 
+  #editor-panel, 
+  #zen-controls, 
+  .no-print,
+  button,
+  .copy-code-btn,
+  .mermaid-toggle-btn,
+  .anchor-link {
+    display: none !important;
+  }
+
+  /* Force preview container to expand cleanly */
+  #app-container,
+  #main-content,
+  #preview-container,
+  #preview-paper {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Force rich, high-contrast jet-slate text across all content */
+  .markdown-body,
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4,
+  .markdown-body h5,
+  .markdown-body h6,
+  .markdown-body p,
+  .markdown-body li,
+  .markdown-body td,
+  .markdown-body th {
+    color: #0f172a !important;
+  }
+
+  .markdown-body h1,
+  .markdown-body h2 {
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+
+  .markdown-body a {
+    text-decoration: none !important;
+    color: #2563eb !important;
+  }
+
+  /* Mermaid diagram print optimization */
+  .mermaid-container {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .mermaid-container svg text,
+  .mermaid-container svg span {
+    fill: #0f172a !important;
+    color: #0f172a !important;
+  }
+
+  /* Balanced page breaks: avoid empty spaces while protecting table rows & code blocks */
+  tr, 
+  .code-block-wrapper,
+  .mermaid-container {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  h1, h2, h3 {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+}
