@@ -31,12 +31,12 @@ export default function MarkdownViewer({
   const containerRef = useRef(null);
   const [fontSize, setFontSize] = useState(16); // px
 
-  // Width mapping: defaults to 95% or 100% as requested
+  // Responsive width mapping: full width on mobile phones, customized on tablet/desktop
   const widthClasses = {
-    '95%': 'w-[95%] max-w-[95%] mx-auto',
-    '100%': 'w-full max-w-full mx-0 px-4 sm:px-8',
-    'wide': 'w-[88%] max-w-7xl mx-auto',
-    'standard': 'max-w-4xl mx-auto'
+    '95%': 'w-full sm:w-[95%] sm:max-w-[95%] mx-auto',
+    '100%': 'w-full max-w-full mx-0 px-2 sm:px-6 md:px-8',
+    'wide': 'w-full sm:w-[88%] sm:max-w-7xl mx-auto',
+    'standard': 'w-full sm:max-w-4xl mx-auto'
   };
 
   const nextWidth = () => {
@@ -97,7 +97,6 @@ export default function MarkdownViewer({
     const container = containerRef.current;
     if (!container) return;
 
-    // Initialize mermaid with current visual theme
     const isDark = theme === 'github-dark' || theme === 'obsidian';
     mermaid.initialize({
       startOnLoad: false,
@@ -137,7 +136,7 @@ export default function MarkdownViewer({
         const { svg } = await mermaid.render(uniqueId, rawCode);
         renderDiv.innerHTML = svg;
         
-        // Ensure SVG scales responsively to the wide container
+        // Ensure SVG scales responsively on small and large viewports
         const svgEl = renderDiv.querySelector('svg');
         if (svgEl) {
           svgEl.style.maxWidth = '100%';
@@ -147,12 +146,12 @@ export default function MarkdownViewer({
       } catch (err) {
         console.warn('Mermaid render error for chart', index, err);
         renderDiv.innerHTML = `
-          <div class="w-full p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-mono">
+          <div class="w-full p-3 sm:p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-mono">
             <div class="font-bold flex items-center gap-1.5 mb-1.5">
               <span>⚠️ Could not render diagram visually:</span>
             </div>
             <div class="text-[11px] opacity-90 mb-2">${err?.message || 'Syntax issue in diagram'}</div>
-            <pre class="p-3 bg-slate-900 text-slate-200 rounded-lg overflow-x-auto text-xs leading-5"><code>${rawCode.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
+            <pre class="p-2 sm:p-3 bg-slate-900 text-slate-200 rounded-lg overflow-x-auto text-xs leading-5"><code>${rawCode.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
           </div>
         `;
       }
@@ -184,28 +183,28 @@ export default function MarkdownViewer({
         isFullscreen ? '!h-screen !fixed !inset-0 !z-50 bg-slate-950' : 'bg-slate-100/70 dark:bg-slate-950'
       }`}
     >
-      {/* Floating Zen Controls Bar in Fullscreen / Reader Mode */}
+      {/* Floating Zen Controls Bar in Fullscreen / Reader Mode (Mobile-Calibrated) */}
       {isFullscreen && (
         <div 
           id="zen-controls"
-          className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 hover:bg-slate-900 text-white backdrop-blur-md px-4 py-2 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-3 transition-opacity duration-300 opacity-40 hover:opacity-100"
+          className="fixed top-3 sm:top-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 hover:bg-slate-900 text-white backdrop-blur-md px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-1.5 sm:gap-3 transition-opacity duration-300 opacity-60 hover:opacity-100 max-w-[96vw] overflow-x-auto"
         >
-          <span className="text-xs font-semibold text-slate-400 pr-2 border-r border-slate-700 select-none">
-            Zen Mode
+          <span className="text-[11px] sm:text-xs font-semibold text-slate-400 pr-1.5 sm:pr-2 border-r border-slate-700 select-none hidden xs:inline">
+            Zen
           </span>
 
           {/* Font size */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 sm:gap-1">
             <button 
-              onClick={() => setFontSize(Math.max(13, fontSize - 1))}
+              onClick={() => setFontSize(Math.max(12, fontSize - 1))}
               className="p-1 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white text-xs font-mono"
               title="Smaller Text (A-)"
             >
               A-
             </button>
-            <span className="text-xs text-slate-400 font-mono w-6 text-center">{fontSize}</span>
+            <span className="text-xs text-slate-400 font-mono w-5 sm:w-6 text-center">{fontSize}</span>
             <button 
-              onClick={() => setFontSize(Math.min(24, fontSize + 1))}
+              onClick={() => setFontSize(Math.min(26, fontSize + 1))}
               className="p-1 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white text-xs font-mono"
               title="Larger Text (A+)"
             >
@@ -218,11 +217,11 @@ export default function MarkdownViewer({
           {/* Width Cycle */}
           <button 
             onClick={nextWidth}
-            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white text-xs flex items-center gap-1.5"
-            title="Cycle Reading Width (95% / 100% / Wide / Standard)"
+            className="p-1 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white text-xs flex items-center gap-1"
+            title="Cycle Reading Width"
           >
             <AlignJustify className="w-3.5 h-3.5 text-blue-400" />
-            <span className="text-xs font-medium font-mono">{columnWidth}</span>
+            <span className="text-[11px] font-mono">{columnWidth}</span>
           </button>
 
           <div className="h-4 w-px bg-slate-700" />
@@ -230,21 +229,21 @@ export default function MarkdownViewer({
           {/* PDF Direct */}
           <button 
             onClick={onDirectPdfDownload}
-            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white text-xs flex items-center gap-1"
+            className="p-1 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white text-xs flex items-center gap-1"
             title="Download PDF"
           >
             <FileDown className="w-3.5 h-3.5 text-red-400" />
-            <span className="text-[11px]">PDF</span>
+            <span className="text-[11px] hidden sm:inline">PDF</span>
           </button>
 
           {/* Print to PDF */}
           <button 
             onClick={onPrintPdf}
-            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white text-xs flex items-center gap-1"
+            className="p-1 sm:p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white text-xs flex items-center gap-1"
             title="Vector Print to PDF"
           >
             <Printer className="w-3.5 h-3.5 text-blue-400" />
-            <span className="text-[11px]">Print</span>
+            <span className="text-[11px] hidden sm:inline">Print</span>
           </button>
 
           <div className="h-4 w-px bg-slate-700" />
@@ -252,7 +251,7 @@ export default function MarkdownViewer({
           {/* Exit Fullscreen */}
           <button 
             onClick={toggleFullscreen}
-            className="p-1.5 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg text-xs flex items-center gap-1 transition-colors"
+            className="p-1 sm:p-1.5 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg text-xs flex items-center gap-1 transition-colors"
             title="Exit Full Screen (Esc or F)"
           >
             <Minimize2 className="w-3.5 h-3.5" />
@@ -261,17 +260,17 @@ export default function MarkdownViewer({
         </div>
       )}
 
-      {/* Reader Paper Viewport */}
-      <main className="py-6 px-2 sm:px-4 md:px-6 flex justify-center min-h-full">
+      {/* Reader Paper Viewport - Calibrated padding for mobile/tablet */}
+      <main className="py-3 sm:py-6 md:py-8 px-1.5 sm:px-4 md:px-6 flex justify-center min-h-full">
         <article 
           id="preview-paper"
           ref={containerRef}
           style={{ fontSize: `${fontSize}px` }}
-          className={`${widthClasses[columnWidth] || widthClasses['95%']} bg-[var(--bg-primary)] text-[var(--text-main)] rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-6 sm:p-10 md:p-12 shadow-lg shadow-slate-200/50 dark:shadow-none transition-all duration-200`}
+          className={`${widthClasses[columnWidth] || widthClasses['95%']} bg-[var(--bg-primary)] text-[var(--text-main)] rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-3.5 sm:p-7 md:p-12 shadow-lg shadow-slate-200/50 dark:shadow-none transition-all duration-200 max-w-full overflow-hidden`}
         >
           {html ? (
             <div 
-              className="markdown-body"
+              className="markdown-body w-full break-words"
               dangerouslySetInnerHTML={{ __html: html }} 
             />
           ) : (

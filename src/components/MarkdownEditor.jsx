@@ -25,12 +25,12 @@ export default function MarkdownEditor({ content, onChange, onDropFile }) {
       id="editor-panel"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className="flex flex-col h-[calc(100vh-4rem)] border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 select-text transition-colors flex-1 min-w-[320px]"
+      className="flex flex-col h-[calc(100vh-4rem)] border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 select-text transition-colors flex-1 w-full min-w-0"
     >
-      <div className="h-10 px-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between text-xs text-slate-500 select-none">
+      <div className="h-10 px-3 sm:px-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between text-xs text-slate-500 select-none">
         <div className="flex items-center gap-2 font-mono">
           <FileCode className="w-4 h-4 text-blue-500" />
-          <span>Markdown Source</span>
+          <span className="truncate">Markdown Source</span>
         </div>
         <div className="text-[11px] text-slate-400">
           <span>{lineCount} lines</span>
@@ -38,8 +38,8 @@ export default function MarkdownEditor({ content, onChange, onDropFile }) {
       </div>
 
       <div className="flex-1 relative overflow-hidden flex">
-        {/* Line Numbers gutter */}
-        <div className="w-12 shrink-0 py-4 bg-slate-50/80 dark:bg-slate-950/40 text-slate-400 text-right pr-3 font-mono text-xs select-none border-r border-slate-100 dark:border-slate-800/60 overflow-hidden leading-6">
+        {/* Line Numbers gutter - compact on mobile */}
+        <div className="w-8 sm:w-11 shrink-0 py-3 sm:py-4 bg-slate-50/80 dark:bg-slate-950/40 text-slate-400 text-right pr-1.5 sm:pr-2.5 font-mono text-[10px] sm:text-xs select-none border-r border-slate-100 dark:border-slate-800/60 overflow-hidden leading-6">
           {Array.from({ length: Math.min(lineCount, 500) }).map((_, i) => (
             <div key={i}>{i + 1}</div>
           ))}
@@ -51,7 +51,7 @@ export default function MarkdownEditor({ content, onChange, onDropFile }) {
           value={content}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Type or paste Markdown here, or drag & drop a .md file..."
-          className="flex-1 p-4 bg-transparent outline-none resize-none font-mono text-xs sm:text-sm text-slate-800 dark:text-slate-100 leading-6 overflow-y-auto selection:bg-blue-500 selection:text-white"
+          className="flex-1 p-3 sm:p-4 bg-transparent outline-none resize-none font-mono text-xs sm:text-sm text-slate-800 dark:text-slate-100 leading-6 overflow-y-auto selection:bg-blue-500 selection:text-white"
           spellCheck="false"
         />
       </div>

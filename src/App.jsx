@@ -90,7 +90,9 @@ export default function App() {
     return localStorage.getItem('md_preview_content') || SAMPLE_MARKDOWN;
   });
   const [fileName, setFileName] = useState('Showcase.md');
-  const [viewMode, setViewMode] = useState('split'); // 'preview' | 'split' | 'editor'
+  const [viewMode, setViewMode] = useState(() => {
+    return (typeof window !== 'undefined' && window.innerWidth < 768) ? 'preview' : 'split';
+  });
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('md_preview_theme') || 'modern';
   });
@@ -100,6 +102,17 @@ export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  // Automatically adapt view mode on mobile screens
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && viewMode === 'split') {
+        setViewMode('preview');
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [viewMode]);
 
   // Sync content to localStorage
   useEffect(() => {
