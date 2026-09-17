@@ -229,14 +229,42 @@ export default function MarkdownViewer({
     }
 
     try {
+      const existingMark = range.commonAncestorContainer.nodeType === 1
+        ? range.commonAncestorContainer.closest('mark')
+        : range.commonAncestorContainer.parentElement?.closest('mark');
+
+      if (existingMark && existingMark.textContent.trim() === range.toString().trim()) {
+        existingMark.classList.add('annotated-mark');
+        existingMark.style.backgroundColor = color;
+        pushHistorySnapshot();
+        return;
+      }
+
       const mark = document.createElement('mark');
       mark.style.backgroundColor = color;
       mark.style.color = 'inherit';
-      mark.style.padding = '0.12rem 0.35rem';
-      mark.style.borderRadius = '0.25rem';
       mark.className = 'annotated-mark';
       
       const fragment = range.extractContents();
+
+      // Unwrap any nested marks to avoid double-box stacking
+      const innerMarks = fragment.querySelectorAll('mark');
+      innerMarks.forEach(m => {
+        if (m.classList.contains('annotated-comment')) {
+          mark.classList.add('annotated-comment');
+          const comment = m.getAttribute('data-comment');
+          if (comment) {
+            mark.setAttribute('data-comment', comment);
+            mark.title = m.title;
+          }
+        }
+        const parent = m.parentNode;
+        while (m.firstChild) {
+          parent.insertBefore(m.firstChild, m);
+        }
+        parent.removeChild(m);
+      });
+
       mark.appendChild(fragment);
       range.insertNode(mark);
       
@@ -416,20 +444,50 @@ export default function MarkdownViewer({
       }
 
       try {
-        const mark = document.createElement('mark');
-        mark.className = 'annotated-comment';
-        mark.setAttribute('data-comment', commentText.trim());
-        mark.title = `Comment: ${commentText.trim()}`;
-        mark.style.backgroundColor = '#e2e8f0';
-        mark.style.color = '#0f172a';
-        mark.style.padding = '0.12rem 0.38rem';
-        mark.style.borderRadius = '0.25rem';
-        mark.style.borderBottom = '2px dashed #64748b';
-        mark.style.cursor = 'pointer';
+        // Check if the range is inside an existing highlight mark
+        const existingMark = range.commonAncestorContainer.nodeType === 1
+          ? range.commonAncestorContainer.closest('mark')
+          : range.commonAncestorContainer.parentElement?.closest('mark');
 
-        const fragment = range.extractContents();
-        mark.appendChild(fragment);
-        range.insertNode(mark);
+        if (existingMark) {
+          // It's an existing highlight! Add comment properties directly to avoid nested box-in-box
+          existingMark.classList.add('annotated-comment');
+          existingMark.setAttribute('data-comment', commentText.trim());
+          existingMark.title = `Comment: ${commentText.trim()}`;
+          existingMark.style.cursor = 'pointer';
+        } else {
+          const fragment = range.extractContents();
+
+          // Check if the extracted fragment has any child marks and unwrap them to prevent nested marks
+          const innerMarks = fragment.querySelectorAll('mark');
+          let inheritedBgColor = null;
+          innerMarks.forEach(m => {
+            if (m.style.backgroundColor) inheritedBgColor = m.style.backgroundColor;
+            const parent = m.parentNode;
+            while (m.firstChild) {
+              parent.insertBefore(m.firstChild, m);
+            }
+            parent.removeChild(m);
+          });
+
+          const mark = document.createElement('mark');
+          mark.className = 'annotated-comment';
+          mark.setAttribute('data-comment', commentText.trim());
+          mark.title = `Comment: ${commentText.trim()}`;
+
+          if (inheritedBgColor) {
+            mark.classList.add('annotated-mark');
+            mark.style.backgroundColor = inheritedBgColor;
+          } else {
+            mark.style.backgroundColor = '#f1f5f9';
+          }
+
+          mark.style.color = 'inherit';
+          mark.style.cursor = 'pointer';
+
+          mark.appendChild(fragment);
+          range.insertNode(mark);
+        }
 
         window.getSelection()?.removeAllRanges();
         savedRangeForCommentRef.current = null;
@@ -455,15 +513,23 @@ export default function MarkdownViewer({
     }
   };
 
-  // Delete comment: unwrap element and keep underlying text
+  // Delete comment: remove comment properties or unwrap element
   const handleDeleteComment = () => {
     const el = commentPopover.targetElement;
     if (el && el.parentNode) {
-      const parent = el.parentNode;
-      while (el.firstChild) {
-        parent.insertBefore(el.firstChild, el);
+      if (el.classList.contains('annotated-mark') || (el.style.backgroundColor && el.style.backgroundColor !== 'rgb(241, 245, 249)' && el.style.backgroundColor !== '#f1f5f9')) {
+        // Was also highlighted, preserve highlight and only strip comment
+        el.classList.remove('annotated-comment');
+        el.removeAttribute('data-comment');
+        el.removeAttribute('title');
+      } else {
+        // Solely a comment, unwrap
+        const parent = el.parentNode;
+        while (el.firstChild) {
+          parent.insertBefore(el.firstChild, el);
+        }
+        parent.removeChild(el);
       }
-      parent.removeChild(el);
 
       pushHistorySnapshot();
       setHasEdits(true);

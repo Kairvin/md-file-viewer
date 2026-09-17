@@ -251,53 +251,95 @@ mark,
 .annotated-mark {
   background-color: #fef08a;
   color: inherit !important;
-  padding: 0.12rem 0.35rem;
+  padding: 0.1rem 0.32rem;
   border-radius: 0.25rem;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
 
-/* Inline Comments with Greyish Background */
+/* Inline Comments - Production Grade Refined Typography */
 mark.annotated-comment,
 .annotated-comment {
-  background-color: #e2e8f0 !important;
-  color: #0f172a !important;
-  padding: 0.12rem 0.38rem;
+  background-color: #f1f5f9;
+  color: inherit !important;
+  padding: 0.1rem 0.32rem;
   border-radius: 0.25rem;
-  border-bottom: 2px dashed #64748b;
+  border-bottom: 2px solid #94a3b8;
   cursor: pointer;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   transition: all 0.15s ease;
   text-decoration: none !important;
+  display: inline;
+}
+
+/* When highlighted text has a comment: preserve highlight background, add refined border */
+mark.annotated-mark.annotated-comment,
+.annotated-mark.annotated-comment,
+mark[style*="background-color"].annotated-comment {
+  border-bottom: 2px solid rgba(15, 23, 42, 0.45);
 }
 
 .dark mark.annotated-comment,
 .dark .annotated-comment {
-  background-color: #334155 !important;
-  color: #f8fafc !important;
-  border-bottom-color: #94a3b8 !important;
+  background-color: #334155;
+  color: inherit !important;
+  border-bottom-color: #64748b;
+}
+
+.dark mark.annotated-mark.annotated-comment,
+.dark .annotated-mark.annotated-comment,
+.dark mark[style*="background-color"].annotated-comment {
+  border-bottom: 2px solid rgba(248, 250, 252, 0.55);
 }
 
 mark.annotated-comment:hover,
 .annotated-comment:hover {
-  background-color: #cbd5e1 !important;
   filter: brightness(0.96);
+  border-bottom-color: #2563eb !important;
 }
 
 .dark mark.annotated-comment:hover,
 .dark .annotated-comment:hover {
-  background-color: #475569 !important;
   filter: brightness(1.1);
+  border-bottom-color: #38bdf8 !important;
 }
 
+/* Vector SVG Speech Bubble Icon Indicator (Replaces cartoon emoji) */
 mark.annotated-comment::after,
 .annotated-comment::after {
-  content: ' 💬';
-  font-size: 0.72em;
-  opacity: 0.75;
-  vertical-align: super;
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 3px;
+  margin-right: 1px;
+  vertical-align: -1px;
+  background-color: currentColor;
+  opacity: 0.65;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E") no-repeat center / contain;
   pointer-events: none;
+  transition: all 0.15s ease;
+}
+
+mark.annotated-comment:hover::after,
+.annotated-comment:hover::after {
+  opacity: 0.95;
+  transform: scale(1.15);
+}
+
+/* Prevent double-box nesting artifacts */
+mark mark,
+.annotated-mark .annotated-comment,
+.annotated-comment .annotated-mark,
+.annotated-comment .annotated-comment {
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .exporting-pdf mark,
