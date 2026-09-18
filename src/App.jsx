@@ -162,7 +162,7 @@ export default function App() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [hasPlaygroundEdits, setHasPlaygroundEdits] = useState(false);
 
-  // In-App Confirmation Modal state
+  // In-App Confirmation & Alert Modal state
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -171,12 +171,34 @@ export default function App() {
     confirmLabel: 'Confirm',
     cancelLabel: 'Cancel',
     variant: 'danger',
+    isAlert: false,
     onConfirm: () => {},
   });
 
   const closeConfirmModal = useCallback(() => {
     setConfirmModal(prev => ({ ...prev, isOpen: false }));
   }, []);
+
+  // Listen for software in-app alert dispatches
+  useEffect(() => {
+    const handleAppAlert = (e) => {
+      const { message, title = 'Notice', variant = 'warning', confirmLabel = 'Got it' } = e.detail || {};
+      setConfirmModal({
+        isOpen: true,
+        title,
+        message,
+        fileName: '',
+        confirmLabel,
+        cancelLabel: '',
+        isAlert: true,
+        variant,
+        onConfirm: closeConfirmModal,
+      });
+    };
+
+    window.addEventListener('app-alert', handleAppAlert);
+    return () => window.removeEventListener('app-alert', handleAppAlert);
+  }, [closeConfirmModal]);
 
   // Active file derived from state
   const activeFile = useMemo(() => {
@@ -632,7 +654,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Global In-App Confirmation Alert Modal */}
+      {/* Global In-App Confirmation / Alert Modal */}
       <ConfirmModal 
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}
@@ -641,6 +663,7 @@ export default function App() {
         confirmLabel={confirmModal.confirmLabel}
         cancelLabel={confirmModal.cancelLabel}
         variant={confirmModal.variant}
+        isAlert={confirmModal.isAlert}
         onConfirm={confirmModal.onConfirm}
         onCancel={closeConfirmModal}
       />

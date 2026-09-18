@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { downloadMarkdown } from '../utils/pdfExport';
+import { showInAppAlert } from '../utils/alerts';
 
 export default function FileSidebar({
   files = [],
@@ -64,6 +65,8 @@ export default function FileSidebar({
   const submitRename = (fileId) => {
     if (editName.trim()) {
       onRenameFile(fileId, editName.trim());
+    } else {
+      showInAppAlert('Document name cannot be empty. Please enter a valid name.', 'Invalid Name', 'warning');
     }
     setEditingId(null);
   };
@@ -81,9 +84,18 @@ export default function FileSidebar({
   const handleFileImport = (e) => {
     const file = e.target.files?.[0];
     if (file) {
+      const isText = file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt') || (file.type && file.type.startsWith('text/'));
+      if (!isText) {
+        showInAppAlert(`The file "${file.name}" is not a supported Markdown or text document. Please import a .md, .markdown, or .txt file.`, 'Unsupported File', 'warning');
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (event) => {
         onImportFile(file.name, event.target.result);
+      };
+      reader.onerror = () => {
+        showInAppAlert(`Failed to read "${file.name}". Please ensure the file is accessible and try again.`, 'File Read Error', 'danger');
       };
       reader.readAsText(file);
     }

@@ -1,40 +1,67 @@
 import React, { useEffect, useRef } from 'react';
-import { Trash2, AlertTriangle, AlertCircle, X, FileText } from 'lucide-react';
+import { Trash2, AlertTriangle, AlertCircle, Info, CheckCircle2, X, FileText } from 'lucide-react';
 
 export default function ConfirmModal({
   isOpen,
-  title = "Confirm Action",
+  title = "Notice",
   fileName = "",
   message = "Are you sure you want to proceed?",
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
-  variant = "danger", // "danger" | "warning" | "default"
+  variant = "danger", // "danger" | "warning" | "info" | "success" | "default"
+  isAlert = false,
   onConfirm,
   onCancel
 }) {
   const cancelBtnRef = useRef(null);
+  const primaryBtnRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    // Focus cancel button for safe keyboard navigation
-    cancelBtnRef.current?.focus();
+    // Focus appropriate button for intuitive keyboard navigation
+    if (isAlert) {
+      primaryBtnRef.current?.focus();
+    } else {
+      cancelBtnRef.current?.focus();
+    }
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onCancel();
+        if (onCancel) {
+          onCancel();
+        } else if (onConfirm) {
+          onConfirm();
+        }
+      } else if (e.key === 'Enter' && isAlert) {
+        e.preventDefault();
+        if (onConfirm) {
+          onConfirm();
+        } else if (onCancel) {
+          onCancel();
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onCancel]);
+  }, [isOpen, onCancel, onConfirm, isAlert]);
 
   if (!isOpen) return null;
 
   const isDanger = variant === 'danger';
   const isWarning = variant === 'warning';
+  const isInfo = variant === 'info';
+  const isSuccess = variant === 'success';
+
+  const handleBackdropClick = () => {
+    if (onCancel) {
+      onCancel();
+    } else if (onConfirm) {
+      onConfirm();
+    }
+  };
 
   return (
     <div 
@@ -43,10 +70,10 @@ export default function ConfirmModal({
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
     >
-      {/* Backdrop */}
+      {/* Backdrop with modern blur */}
       <div 
         className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
-        onClick={onCancel}
+        onClick={handleBackdropClick}
         aria-hidden="true"
       />
 
@@ -57,8 +84,8 @@ export default function ConfirmModal({
       >
         {/* Top Close Button */}
         <button
-          onClick={onCancel}
-          className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          onClick={handleBackdropClick}
+          className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           title="Close (Esc)"
         >
           <X className="w-4 h-4" />
@@ -71,12 +98,20 @@ export default function ConfirmModal({
               ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400'
               : isWarning
               ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-400'
+              : isInfo
+              ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-900/50 text-blue-600 dark:text-blue-400'
+              : isSuccess
+              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400'
               : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
           }`}>
             {isDanger ? (
-              <Trash2 className="w-5 h-5" />
+              !isAlert ? <Trash2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />
             ) : isWarning ? (
               <AlertTriangle className="w-5 h-5" />
+            ) : isInfo ? (
+              <Info className="w-5 h-5" />
+            ) : isSuccess ? (
+              <CheckCircle2 className="w-5 h-5" />
             ) : (
               <AlertCircle className="w-5 h-5" />
             )}
@@ -107,27 +142,35 @@ export default function ConfirmModal({
 
         {/* Action Buttons */}
         <div className="mt-6 sm:mt-7 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end gap-2.5">
-          <button
-            ref={cancelBtnRef}
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 transition-colors shadow-2xs active:scale-95"
-          >
-            {cancelLabel}
-          </button>
+          {!isAlert && (
+            <button
+              ref={cancelBtnRef}
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 transition-colors shadow-2xs active:scale-95 cursor-pointer"
+            >
+              {cancelLabel}
+            </button>
+          )}
 
           <button
+            ref={primaryBtnRef}
             type="button"
-            onClick={onConfirm}
-            className={`px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium text-white transition-all shadow-xs flex items-center gap-1.5 active:scale-95 ${
+            onClick={onConfirm || onCancel}
+            className={`px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium text-white transition-all shadow-xs flex items-center gap-1.5 active:scale-95 cursor-pointer ${
               isDanger
                 ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800'
                 : isWarning
                 ? 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800'
+                : isInfo
+                ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
+                : isSuccess
+                ? 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800'
                 : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900'
             }`}
           >
-            {isDanger && <Trash2 className="w-3.5 h-3.5" />}
+            {isDanger && !isAlert && <Trash2 className="w-3.5 h-3.5" />}
+            {isSuccess && <CheckCircle2 className="w-3.5 h-3.5" />}
             <span>{confirmLabel}</span>
           </button>
         </div>
@@ -135,3 +178,4 @@ export default function ConfirmModal({
     </div>
   );
 }
+

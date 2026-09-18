@@ -2,6 +2,14 @@ import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { showInAppAlert } from './utils/alerts';
+
+// Globally intercept window.alert so all browser alerts are displayed via in-app software UI
+if (typeof window !== 'undefined') {
+  window.alert = (message) => {
+    showInAppAlert(message, 'Notice', 'warning', 'Got it');
+  };
+}
 
 class ErrorBoundary extends Component {
   constructor(props) {

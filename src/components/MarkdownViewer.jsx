@@ -21,6 +21,7 @@ import FloatingAnnotationBar from './FloatingAnnotationBar';
 import PlaygroundToolbar from './PlaygroundToolbar';
 import CommentPopover from './CommentPopover';
 import ConfirmModal from './ConfirmModal';
+import { showInAppAlert } from '../utils/alerts';
 
 /**
  * Safely collect all text nodes intersecting a given range inside root.
@@ -595,7 +596,12 @@ export default function MarkdownViewer({
   // Format Handlers
   const handleHighlight = (color) => {
     const selection = window.getSelection();
-    if (!selection || !selection.rangeCount) return;
+    if (!selection || !selection.rangeCount || selection.isCollapsed) {
+      if (color) {
+        showInAppAlert('Please highlight or select text in the document before choosing a highlight color.', 'Selection Required', 'info');
+      }
+      return;
+    }
     const range = selection.getRangeAt(0);
     if (range.collapsed) return;
 
@@ -638,7 +644,12 @@ export default function MarkdownViewer({
 
   const handleTextColor = (color) => {
     const selection = window.getSelection();
-    if (!selection || !selection.rangeCount) return;
+    if (!selection || !selection.rangeCount || selection.isCollapsed) {
+      if (color) {
+        showInAppAlert('Please highlight or select text in the document before choosing a font color.', 'Selection Required', 'info');
+      }
+      return;
+    }
     const range = selection.getRangeAt(0);
     if (range.collapsed) return;
 
@@ -712,7 +723,10 @@ export default function MarkdownViewer({
 
   const handleClearFormat = () => {
     const selection = window.getSelection();
-    if (!selection || !selection.rangeCount) return;
+    if (!selection || !selection.rangeCount || selection.isCollapsed) {
+      showInAppAlert('Please highlight or select the formatted text you want to clear.', 'Selection Required', 'info');
+      return;
+    }
     const range = selection.getRangeAt(0);
     if (range.collapsed) return;
 
@@ -792,18 +806,20 @@ export default function MarkdownViewer({
   const handleOpenAddComment = () => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      alert('Please select some text first to add a comment.');
+      showInAppAlert('Please highlight or select the text you want to attach a comment to.', 'Selection Required', 'warning');
       return;
     }
 
     const range = selection.getRangeAt(0);
     const paper = paperRef.current;
     if (!paper || !paper.contains(range.commonAncestorContainer)) {
+      showInAppAlert('Please select text inside the document paper to attach a comment.', 'Selection Required', 'warning');
       return;
     }
 
     const trimmedRange = trimRangeToText(paper, range);
     if (!trimmedRange || !trimmedRange.toString().trim()) {
+      showInAppAlert('Please select visible text characters to attach a comment.', 'Selection Required', 'warning');
       return;
     }
 
@@ -1119,9 +1135,17 @@ export default function MarkdownViewer({
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file && onDropFile) {
+      const isText = file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt') || (file.type && file.type.startsWith('text/'));
+      if (!isText) {
+        showInAppAlert(`The file "${file.name}" is not a supported Markdown or text document. Please choose a .md, .markdown, or .txt file.`, 'Unsupported File', 'warning');
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (event) => {
         onDropFile(file.name, event.target.result);
+      };
+      reader.onerror = () => {
+        showInAppAlert(`Failed to read "${file.name}". Please ensure the file is accessible and try again.`, 'File Read Error', 'danger');
       };
       reader.readAsText(file);
     }

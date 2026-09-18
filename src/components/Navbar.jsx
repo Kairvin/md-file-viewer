@@ -23,6 +23,7 @@ import {
   PanelLeft,
   Files
 } from 'lucide-react';
+import { showInAppAlert } from '../utils/alerts';
 
 export default function Navbar({
   fileName,
@@ -66,12 +67,22 @@ export default function Navbar({
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
+      const isText = file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt') || (file.type && file.type.startsWith('text/'));
+      if (!isText) {
+        showInAppAlert(`The file "${file.name}" is not a supported Markdown or text document. Please choose a .md, .markdown, or .txt file.`, 'Unsupported File', 'warning');
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (event) => {
         onOpenFile(file.name, event.target.result);
       };
+      reader.onerror = () => {
+        showInAppAlert(`Failed to read "${file.name}". Please ensure the file is accessible and try again.`, 'File Read Error', 'danger');
+      };
       reader.readAsText(file);
     }
+    e.target.value = '';
   };
 
   const themes = [
