@@ -176,6 +176,126 @@ export function setCommentsOnElement(el, commentsList) {
 }
 
 /**
+ * Detects if an element is an inline formatting wrapper (strong, b, em, i, u, s, code, span, etc.)
+ */
+export function isInlineFormattingWrapper(el) {
+  if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+  if (
+    el.tagName === 'MARK' || 
+    el.classList?.contains('annotated-comment') || 
+    el.hasAttribute?.('data-comment') ||
+    el.classList?.contains('annotated-mark')
+  ) {
+    return false;
+  }
+  const inlineTags = ['STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'CODE', 'SPAN', 'A', 'SUB', 'SUP'];
+  return inlineTags.includes(el.tagName);
+}
+
+/**
+ * Lifts a mark element out of inline formatting wrappers (e.g. <strong><mark>text</mark></strong> -> <mark><strong>text</strong></mark>)
+ * so that it becomes an immediate child of the block container (e.g. <p> or <li>) and can merge with adjacent marks.
+ */
+export function liftMarkOutOfInlineWrappers(mark, blockContainer) {
+  let curr = mark;
+  while (curr.parentElement && curr.parentElement !== blockContainer && isInlineFormattingWrapper(curr.parentElement)) {
+    const wrapper = curr.parentElement;
+    const parent = wrapper.parentNode;
+    if (!parent) break;
+
+    // Split wrapper before curr if there are preceding siblings
+    const preceding = [];
+    let child = wrapper.firstChild;
+    while (child && child !== curr) {
+      preceding.push(child);
+      child = child.nextSibling;
+    }
+
+    if (preceding.length > 0) {
+      const beforeWrapper = wrapper.cloneNode(false);
+      preceding.forEach(c => beforeWrapper.appendChild(c));
+      parent.insertBefore(beforeWrapper, wrapper);
+    }
+
+    // Split wrapper after curr if there are succeeding siblings
+    const succeeding = [];
+    child = curr.nextSibling;
+    while (child) {
+      succeeding.push(child);
+      child = child.nextSibling;
+    }
+
+    if (succeeding.length > 0) {
+      const afterWrapper = wrapper.cloneNode(false);
+      succeeding.forEach(c => afterWrapper.appendChild(c));
+      parent.insertBefore(afterWrapper, wrapper.nextSibling);
+    }
+
+    // Invert: put cloned wrapper inside curr, and put curr in parent
+    const innerWrapper = wrapper.cloneNode(false);
+    while (curr.firstChild) {
+      innerWrapper.appendChild(curr.firstChild);
+    }
+    curr.appendChild(innerWrapper);
+    parent.replaceChild(curr, wrapper);
+  }
+}
+
+/**
+ * Consolidates adjacent or sibling marks within container that share the same background color,
+ * eliminating fragmented pills and notches between bold and normal text.
+ */
+export function consolidateMarks(container) {
+  if (!container) return;
+
+  const marks = Array.from(container.querySelectorAll('mark'));
+
+  // Pass 1: lift marks out of inline formatting wrappers so they become block-level siblings
+  marks.forEach(mark => {
+    if (!container.contains(mark)) return;
+    const block = mark.closest('p, li, blockquote, h1, h2, h3, h4, h5, h6, td, th') || container;
+    liftMarkOutOfInlineWrappers(mark, block);
+  });
+
+  // Pass 2: merge adjacent sibling marks
+  let merged = true;
+  while (merged) {
+    merged = false;
+    const currentMarks = Array.from(container.querySelectorAll('mark'));
+    for (let i = 0; i < currentMarks.length; i++) {
+      const m = currentMarks[i];
+      if (!m.parentNode) continue;
+
+      let next = m.nextSibling;
+      let whitespaceNode = null;
+      if (next && next.nodeType === Node.TEXT_NODE && next.nodeValue.trim().length === 0) {
+        whitespaceNode = next;
+        next = next.nextSibling;
+      }
+
+      if (next && next.tagName === 'MARK') {
+        const sameColor = (m.style.backgroundColor || '') === (next.style.backgroundColor || '');
+        const sameComment = (m.getAttribute('data-comment') || '') === (next.getAttribute('data-comment') || '');
+        const mIsComment = m.classList.contains('annotated-comment');
+        const nextIsComment = next.classList.contains('annotated-comment');
+
+        if (sameColor && sameComment && (mIsComment === nextIsComment)) {
+          if (whitespaceNode) {
+            m.appendChild(whitespaceNode);
+          }
+          while (next.firstChild) {
+            m.appendChild(next.firstChild);
+          }
+          next.remove();
+          merged = true;
+          break;
+        }
+      }
+    }
+  }
+}
+
+/**
  * Applies highlight, text color, or comment safely at the text-node level.
  * Never calls extractContents(), never touches or extracts <li> or <p> tags,
  * and never breaks document structure.
@@ -338,7 +458,11 @@ export function applyFormattingToRange(root, range, options = {}) {
     }
   });
 
-  return createdElements;
+  if (type === 'highlight' || type === 'comment') {
+    consolidateMarks(root);
+  }
+
+  return createdElements.filter(el => root.contains(el));
 }
 
 /**
@@ -455,6 +579,9 @@ export function cleanupEmptyAnnotationsInDom(root) {
       span.remove();
     }
   });
+
+  // 5. Consolidate adjacent marks and lift marks out of inline wrappers (bold, italic, etc.)
+  consolidateMarks(root);
 }
 
 /**
@@ -751,13 +878,14 @@ export default function MarkdownViewer({
       color
     });
 
-    if (createdElements.length > 0) {
+    const validCreated = (createdElements || []).filter(el => paper.contains(el));
+    if (validCreated.length > 0) {
       const sel = window.getSelection();
       if (sel) {
         sel.removeAllRanges();
         const newRange = document.createRange();
-        newRange.setStartBefore(createdElements[0]);
-        newRange.setEndAfter(createdElements[createdElements.length - 1]);
+        newRange.setStartBefore(validCreated[0]);
+        newRange.setEndAfter(validCreated[validCreated.length - 1]);
         sel.addRange(newRange);
       }
     }

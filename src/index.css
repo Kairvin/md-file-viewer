@@ -436,6 +436,54 @@ mark mark,
   box-shadow: none !important;
 }
 
+/* Ensure inline elements inside marks have seamless typography and no background glitches */
+mark strong,
+mark b,
+mark em,
+mark i,
+mark u,
+mark s,
+mark del,
+mark code,
+mark span:not(.annotated-comment):not(.annotated-color),
+.annotated-mark strong,
+.annotated-mark b,
+.annotated-mark em,
+.annotated-mark i,
+.annotated-mark u,
+.annotated-mark s,
+.annotated-mark del,
+.annotated-mark code,
+.annotated-mark span:not(.annotated-comment):not(.annotated-color) {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  line-height: inherit !important;
+}
+
+/* Seamless connection when marks are adjacent siblings */
+mark + mark,
+.annotated-mark + .annotated-mark,
+mark + .annotated-mark,
+.annotated-mark + mark {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  padding-left: 0.05em !important;
+  margin-left: -0.1em !important;
+}
+
+mark:has(+ mark),
+.annotated-mark:has(+ .annotated-mark),
+mark:has(+ .annotated-mark),
+.annotated-mark:has(+ mark) {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  padding-right: 0.05em !important;
+}
+
 /* PDF Export: Highlight and Underline Alignment */
 .exporting-pdf mark,
 .exporting-pdf .annotated-mark {
