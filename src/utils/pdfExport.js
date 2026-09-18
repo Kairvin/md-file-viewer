@@ -1,4 +1,5 @@
 import html2pdf from 'html2pdf.js';
+export { html2pdf };
 
 /**
  * Trigger native high-fidelity vector PDF print with print stylesheet
@@ -50,6 +51,15 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
   // Strip contentEditable from clone so no cursor or edit outlines are captured
   clone.removeAttribute('contenteditable');
   clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+
+  // Clean any zero-width spaces from text nodes in the clone
+  const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+  let textNode;
+  while ((textNode = walker.nextNode())) {
+    if (textNode.nodeValue.includes('\u200B')) {
+      textNode.nodeValue = textNode.nodeValue.replace(/\u200B/g, '');
+    }
+  }
 
   // 3. Transfer rendered SVG dimensions (Mermaid diagrams) from live DOM to clone
   const liveSvgs = element.querySelectorAll('svg');
@@ -129,26 +139,8 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
     }
   });
 
-  // 6. Ensure pixel-perfect alignment for highlighted and underlined elements in PDF
-  clone.querySelectorAll('mark, .annotated-mark').forEach(mark => {
-    mark.style.display = 'inline';
-    mark.style.lineHeight = 'inherit';
-    mark.style.verticalAlign = 'baseline';
-    mark.style.boxDecorationBreak = 'slice';
-    mark.style.webkitBoxDecorationBreak = 'slice';
-    mark.style.padding = '0 3px';
-    mark.style.borderRadius = '2px';
-  });
-
-  clone.querySelectorAll('u, [style*="text-decoration: underline"], [style*="text-decoration:underline"]').forEach(u => {
-    u.style.display = 'inline';
-    u.style.lineHeight = 'inherit';
-    u.style.verticalAlign = 'baseline';
-    u.style.textDecoration = 'underline';
-    u.style.textUnderlineOffset = '2.5px';
-    u.style.textDecorationThickness = '1.5px';
-    u.style.textDecorationSkipInk = 'none';
-  });
+  // 6. Highlight and underline styling
+  formatHighlightsForPdf(clone);
 
   stagingWrapper.appendChild(clone);
   document.body.appendChild(stagingWrapper);
@@ -167,7 +159,19 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
     // Reflow delay to ensure fonts and layout settle
     await new Promise(resolve => setTimeout(resolve, 150));
 
-    // 6. Production-grade html2pdf configuration
+    // 6. Re-check highlights after layout settle and apply pre-pagination
+    formatHighlightsForPdf(clone);
+
+    // CSS page height for A4 (750px width, 10mm margins on all 4 sides):
+    // Printable width = 190mm, printable height = 277mm -> ratio = 277/190 = 1.45789...
+    // Canvas page height at 2x scale = Math.floor(1500 * (277/190)) = 2186px
+    // CSS page height = 2186 / 2 = 1093px
+    paginatePdfClone(clone, 1093);
+
+    // Short reflow wait after pagination spacers
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // 7. Production-grade html2pdf configuration
     const opt = {
       margin: [10, 10, 10, 10], // 10mm clean margins for standard A4
       filename: safeName,
@@ -188,20 +192,9 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
         format: 'a4',
         orientation: 'portrait'
       },
-      pagebreak: {
-        mode: ['css', 'legacy'],
-        avoid: [
-          '.mermaid-container', 
-          '.code-block-wrapper', 
-          '.markdown-alert', 
-          '.table-container', 
-          'figure', 
-          'h1', 
-          'h2', 
-          'h3',
-          'blockquote'
-        ]
-      }
+      // Disable html2pdf's buggy scroll-dependent pagebreak plugin since
+      // we perform exact mathematical pre-pagination above
+      pagebreak: { mode: [] }
     };
 
     await html2pdf().set(opt).from(clone).save();
@@ -269,3 +262,250 @@ export function downloadHtml(renderedHtml, title = 'Document') {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Format mark and underline elements for PDF export to achieve vertical centering
+ * without shifting or disturbing text line breaks.
+ */
+export function formatHighlightsForPdf(clone) {
+  if (!clone) return;
+
+  clone.querySelectorAll('mark, .annotated-mark').forEach(mark => {
+    const bg = mark.style.backgroundColor || window.getComputedStyle(mark).backgroundColor || '#fef08a';
+    const color = mark.style.color || window.getComputedStyle(mark).color || '#0f172a';
+    const rects = mark.getClientRects();
+
+    if (rects.length > 1) {
+      // Multi-line highlight: wraps cleanly across lines with box-decoration-break
+      mark.classList.add('pdf-multiline');
+      mark.style.display = 'inline';
+      mark.style.padding = '3px 4px 1px 4px';
+      mark.style.borderRadius = '3px';
+      mark.style.boxDecorationBreak = 'clone';
+      mark.style.webkitBoxDecorationBreak = 'clone';
+      mark.style.verticalAlign = 'baseline';
+      mark.style.lineHeight = 'inherit';
+      mark.style.backgroundColor = bg;
+      mark.style.color = color;
+    } else {
+      // Single-line highlight: inline-block with vertical-align: -2px perfectly centers the text vertically inside the box
+      mark.style.display = 'inline-block';
+      mark.style.verticalAlign = '-2px';
+      mark.style.lineHeight = '1.25';
+      mark.style.padding = '1px 4px';
+      mark.style.borderRadius = '3px';
+      mark.style.backgroundColor = bg;
+      mark.style.color = color;
+    }
+  });
+
+  clone.querySelectorAll('u, [style*="text-decoration: underline"], [style*="text-decoration:underline"]').forEach(u => {
+    u.style.display = 'inline';
+    u.style.lineHeight = 'inherit';
+    u.style.verticalAlign = 'baseline';
+    u.style.textDecoration = 'underline';
+    u.style.textUnderlineOffset = '2.5px';
+    u.style.textDecorationThickness = '1.5px';
+    u.style.textDecorationSkipInk = 'none';
+  });
+}
+
+/**
+ * Split a paragraph, list item, or blockquote cleanly between lines at boundaryY
+ * so that no line is horizontally cut across pages.
+ */
+function splitElementBetweenLines(element, boundaryY, cloneTop) {
+  const range = document.createRange();
+  let cutFound = false;
+
+  function findLineCut(node) {
+    if (cutFound) return null;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const len = node.textContent.length;
+      for (let i = 0; i < len; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const r = range.getBoundingClientRect();
+        const charBottom = r.bottom - cloneTop;
+        if (charBottom >= boundaryY - 4) {
+          // Found character that reaches or crosses boundaryY
+          // Walk backward to find the beginning of this line
+          const lineTop = r.top;
+          let lineStart = i;
+          while (lineStart > 0) {
+            range.setStart(node, lineStart - 1);
+            range.setEnd(node, lineStart);
+            const prevR = range.getBoundingClientRect();
+            if (Math.abs(prevR.top - lineTop) > 4) break;
+            lineStart--;
+          }
+          cutFound = true;
+          return { node, offset: lineStart };
+        }
+      }
+    } else {
+      for (const child of node.childNodes) {
+        const res = findLineCut(child);
+        if (res) return res;
+      }
+    }
+    return null;
+  }
+
+  const cut = findLineCut(element);
+  if (cut && (cut.offset > 0 || cut.node !== element.firstChild)) {
+    const cutRange = document.createRange();
+    cutRange.setStart(cut.node, cut.offset);
+    cutRange.setEndAfter(element.lastChild);
+
+    const extractedFragment = cutRange.extractContents();
+
+    const secondBlock = element.cloneNode(false);
+    secondBlock.style.marginTop = '0px';
+    secondBlock.appendChild(extractedFragment);
+
+    const p1Bottom = element.getBoundingClientRect().bottom - cloneTop;
+    const spacerHeight = boundaryY - p1Bottom;
+
+    const spacer = document.createElement('div');
+    spacer.className = 'pdf-pagebreak-spacer';
+    spacer.style.display = 'block';
+    spacer.style.height = `${Math.max(0, spacerHeight)}px`;
+    spacer.style.margin = '0';
+    spacer.style.padding = '0';
+    spacer.style.border = 'none';
+    spacer.style.background = 'transparent';
+
+    element.parentNode.insertBefore(spacer, element.nextSibling);
+    element.parentNode.insertBefore(secondBlock, spacer.nextSibling);
+  } else {
+    // Fallback: push entire element to next page
+    const r = element.getBoundingClientRect();
+    const spacerHeight = boundaryY - (r.top - cloneTop);
+    const spacer = document.createElement('div');
+    spacer.className = 'pdf-pagebreak-spacer';
+    spacer.style.display = 'block';
+    spacer.style.height = `${Math.max(0, spacerHeight)}px`;
+    spacer.style.margin = '0';
+    spacer.style.padding = '0';
+    spacer.style.border = 'none';
+    spacer.style.background = 'transparent';
+    element.parentNode.insertBefore(spacer, element);
+  }
+}
+
+/**
+ * Intelligent DOM pre-pagination for PDF export.
+ * Traverses content blocks, detects page break boundary intersections,
+ * protects orphan headings, and inserts precise spacers so that NO line is sliced in half.
+ */
+export function paginatePdfClone(container, pageHeight = 1093) {
+  if (!container) return;
+
+  const cloneTop = container.getBoundingClientRect().top;
+  let pageIndex = 1;
+  const maxPages = 50;
+
+  while (pageIndex < maxPages) {
+    const boundaryY = pageIndex * pageHeight;
+    const containerBottom = container.getBoundingClientRect().bottom - cloneTop;
+    if (boundaryY >= containerBottom - 10) break;
+
+    const blocks = Array.from(container.querySelectorAll(
+      'h1, h2, h3, h4, h5, h6, p, li, blockquote, .code-block-wrapper, .mermaid-container, .markdown-alert, .table-container, table, tr, figure, img, .katex-display'
+    ));
+
+    let crossingBlock = null;
+
+    for (const block of blocks) {
+      if (block.classList.contains('pdf-pagebreak-spacer') || block.closest('.pdf-pagebreak-spacer')) continue;
+
+      const r = block.getBoundingClientRect();
+      if (r.height === 0) continue;
+
+      const bTop = r.top - cloneTop;
+      const bBottom = r.bottom - cloneTop;
+
+      const isHeading = /^H[1-6]$/.test(block.tagName);
+      // Orphan heading prevention: if heading starts within 85px of boundary, push heading to next page
+      if (isHeading && bTop < boundaryY && (boundaryY - bTop < 85 || bBottom >= boundaryY)) {
+        crossingBlock = block;
+        break;
+      }
+
+      if (bTop < boundaryY && bBottom > boundaryY) {
+        if (block.tagName === 'TABLE' || block.classList.contains('table-container')) continue;
+        crossingBlock = block;
+        break;
+      }
+    }
+
+    if (!crossingBlock) {
+      pageIndex++;
+      continue;
+    }
+
+    const blockRect = crossingBlock.getBoundingClientRect();
+    const blockTop = blockRect.top - cloneTop;
+    const isHeading = /^H[1-6]$/.test(crossingBlock.tagName);
+    const isAtomic = isHeading || crossingBlock.matches('.code-block-wrapper, .mermaid-container, .markdown-alert, figure, img, .katex-display');
+    const availableHeight = boundaryY - blockTop;
+
+    if (crossingBlock.tagName === 'TR') {
+      const spacerHeight = boundaryY - blockTop;
+      const spacerTr = document.createElement('tr');
+      spacerTr.className = 'pdf-pagebreak-spacer';
+      spacerTr.style.border = 'none';
+      const td = document.createElement('td');
+      td.colSpan = 100;
+      td.style.height = `${Math.max(0, spacerHeight)}px`;
+      td.style.border = 'none';
+      td.style.padding = '0';
+      td.style.margin = '0';
+      td.style.background = 'transparent';
+      spacerTr.appendChild(td);
+      crossingBlock.parentNode.insertBefore(spacerTr, crossingBlock);
+    } else if (crossingBlock.tagName === 'LI') {
+      if (availableHeight < 55 || blockRect.height < 60) {
+        const spacerHeight = boundaryY - blockTop;
+        const spacerLi = document.createElement('li');
+        spacerLi.className = 'pdf-pagebreak-spacer';
+        spacerLi.style.listStyle = 'none';
+        spacerLi.style.height = `${Math.max(0, spacerHeight)}px`;
+        spacerLi.style.border = 'none';
+        spacerLi.style.padding = '0';
+        spacerLi.style.margin = '0';
+        crossingBlock.parentNode.insertBefore(spacerLi, crossingBlock);
+      } else {
+        splitElementBetweenLines(crossingBlock, boundaryY, cloneTop);
+      }
+    } else if (isAtomic || availableHeight < 55) {
+      const spacerHeight = boundaryY - blockTop;
+      const spacer = document.createElement('div');
+      spacer.className = 'pdf-pagebreak-spacer';
+      spacer.style.display = 'block';
+      spacer.style.height = `${Math.max(0, spacerHeight)}px`;
+      spacer.style.margin = '0';
+      spacer.style.padding = '0';
+      spacer.style.border = 'none';
+      spacer.style.background = 'transparent';
+      crossingBlock.parentNode.insertBefore(spacer, crossingBlock);
+    } else if (crossingBlock.tagName === 'P' || crossingBlock.tagName === 'BLOCKQUOTE') {
+      splitElementBetweenLines(crossingBlock, boundaryY, cloneTop);
+    } else {
+      const spacerHeight = boundaryY - blockTop;
+      const spacer = document.createElement('div');
+      spacer.className = 'pdf-pagebreak-spacer';
+      spacer.style.display = 'block';
+      spacer.style.height = `${Math.max(0, spacerHeight)}px`;
+      spacer.style.margin = '0';
+      spacer.style.padding = '0';
+      spacer.style.border = 'none';
+      spacer.style.background = 'transparent';
+      crossingBlock.parentNode.insertBefore(spacer, crossingBlock);
+    }
+
+    pageIndex++;
+  }
+}
+

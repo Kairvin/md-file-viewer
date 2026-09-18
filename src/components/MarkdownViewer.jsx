@@ -220,10 +220,43 @@ export function applyFormattingToRange(root, range, options = {}) {
     if (type === 'highlight') {
       const parentMark = parent.closest('mark');
       if (parentMark && root.contains(parentMark)) {
-        parentMark.classList.add('annotated-mark');
-        parentMark.style.backgroundColor = color;
-        parentMark.style.color = 'inherit';
-        createdElements.push(parentMark);
+        const isEntireMark = parentMark.textContent.trim() === targetNode.nodeValue.trim();
+        if (isEntireMark) {
+          parentMark.classList.add('annotated-mark');
+          parentMark.style.backgroundColor = color;
+          parentMark.style.color = 'inherit';
+          createdElements.push(parentMark);
+        } else {
+          // Sub-range highlight inside existing mark
+          const beforeRange = document.createRange();
+          beforeRange.setStart(parentMark, 0);
+          beforeRange.setEndBefore(targetNode);
+          const beforeFrag = beforeRange.extractContents();
+
+          const targetRange = document.createRange();
+          targetRange.selectNode(targetNode);
+          const targetFrag = targetRange.extractContents();
+
+          const markParent = parentMark.parentNode;
+
+          if (beforeFrag.textContent.length > 0) {
+            const markBefore = parentMark.cloneNode(false);
+            markBefore.appendChild(beforeFrag);
+            markParent.insertBefore(markBefore, parentMark);
+          }
+
+          const targetEl = parentMark.cloneNode(false);
+          targetEl.classList.add('annotated-mark');
+          targetEl.style.backgroundColor = color;
+          targetEl.style.color = 'inherit';
+          targetEl.appendChild(targetFrag);
+          markParent.insertBefore(targetEl, parentMark);
+          createdElements.push(targetEl);
+
+          if (parentMark.textContent.length === 0) {
+            parentMark.remove();
+          }
+        }
       } else {
         const mark = document.createElement('mark');
         mark.className = 'annotated-mark';
@@ -249,10 +282,48 @@ export function applyFormattingToRange(root, range, options = {}) {
     } else if (type === 'comment') {
       const parentMark = parent.closest('mark');
       if (parentMark && root.contains(parentMark)) {
-        const existing = parseComments(parentMark);
-        const newComments = existing.includes(commentText) ? existing : [...existing, commentText];
-        setCommentsOnElement(parentMark, newComments);
-        createdElements.push(parentMark);
+        const isEntireMark = parentMark.textContent.trim() === targetNode.nodeValue.trim();
+        if (isEntireMark) {
+          const existing = parseComments(parentMark);
+          const newComments = existing.includes(commentText) ? existing : [...existing, commentText];
+          setCommentsOnElement(parentMark, newComments);
+          createdElements.push(parentMark);
+        } else {
+          // Splitting parentMark so ONLY targetNode receives the comment
+          const beforeRange = document.createRange();
+          beforeRange.setStart(parentMark, 0);
+          beforeRange.setEndBefore(targetNode);
+          const beforeFrag = beforeRange.extractContents();
+
+          const targetRange = document.createRange();
+          targetRange.selectNode(targetNode);
+          const targetFrag = targetRange.extractContents();
+
+          const markParent = parentMark.parentNode;
+
+          if (beforeFrag.textContent.length > 0) {
+            const markBefore = parentMark.cloneNode(false);
+            markBefore.appendChild(beforeFrag);
+            markParent.insertBefore(markBefore, parentMark);
+          }
+
+          const targetEl = document.createElement('mark');
+          targetEl.className = parentMark.className;
+          targetEl.style.cssText = parentMark.style.cssText;
+          setCommentsOnElement(targetEl, [commentText]);
+          const bg = parentMark.style.backgroundColor || inheritedBgColor;
+          if (bg && bg !== 'transparent') {
+            targetEl.classList.add('annotated-mark');
+            targetEl.style.backgroundColor = bg;
+          }
+          targetEl.appendChild(targetFrag);
+          markParent.insertBefore(targetEl, parentMark);
+          createdElements.push(targetEl);
+
+          if (parentMark.textContent.length === 0) {
+            parentMark.remove();
+          }
+        }
       } else {
         const mark = document.createElement('mark');
         setCommentsOnElement(mark, [commentText]);
@@ -392,10 +463,11 @@ export function cleanupEmptyAnnotationsInDom(root) {
 export function sanitizePlaygroundHtml(html) {
   if (!html || typeof html !== 'string') return html;
 
+  const cleaned = html.replace(/\u200B/g, '');
   if (typeof window !== 'undefined' && window.DOMParser) {
     try {
       const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
+      const doc = parser.parseFromString(cleaned, 'text/html');
       cleanupEmptyAnnotationsInDom(doc.body);
       return doc.body.innerHTML;
     } catch (e) {
@@ -404,7 +476,7 @@ export function sanitizePlaygroundHtml(html) {
   }
 
   // Regex fallback
-  return html
+  return cleaned
     .replace(/<mark\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/mark>/gi, '')
     .replace(/(<ul\b[^>]*>)\s*<mark\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/mark>/gi, '$1')
     .replace(/<mark\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/mark>\s*(<\/ul>)/gi, '$1')
@@ -606,7 +678,7 @@ export default function MarkdownViewer({
     if (!body) return;
 
     try {
-      localStorage.setItem(storageKey, body.innerHTML);
+      localStorage.setItem(storageKey, body.innerHTML.replace(/\u200B/g, ''));
       setHasEdits(false);
       onPlaygroundEditsChange?.(false);
       if (showIndicator) {
@@ -884,7 +956,14 @@ export default function MarkdownViewer({
     const rect = trimmedRange.getBoundingClientRect();
     const isAbove = rect.bottom + 260 > window.innerHeight && rect.top > 260;
 
-    if (existingCommentEl && paper.contains(existingCommentEl)) {
+    // Only target the existing comment element if the user selected the ENTIRE comment element
+    // If the user selected a specific word/sub-string inside an existing highlight or comment,
+    // create a new comment specifically for that selected word/sub-string!
+    const isFullElementSelection = existingCommentEl && 
+      paper.contains(existingCommentEl) &&
+      selectedText === (existingCommentEl.textContent || '').trim();
+
+    if (isFullElementSelection) {
       const existingComments = parseComments(existingCommentEl);
       setCommentPopover({
         isOpen: true,
@@ -1117,7 +1196,7 @@ export default function MarkdownViewer({
           const body = paper.querySelector('.markdown-body');
           if (body) {
             try {
-              localStorage.setItem(storageKey, body.innerHTML);
+              localStorage.setItem(storageKey, body.innerHTML.replace(/\u200B/g, ''));
             } catch (err) {
               console.error('Failed to sync on beforeunload:', err);
             }
@@ -1130,11 +1209,154 @@ export default function MarkdownViewer({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isPlayground, storageKey]);
 
-  // Keyboard shortcut listener for Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, and Ctrl/Cmd+S (Save)
+  // Helper to exit mark / comment / color formatting boundary on ArrowRight or ArrowLeft
+  const exitMarkBoundary = useCallback((forward = true) => {
+    const selection = window.getSelection();
+    if (!selection || !selection.isCollapsed || selection.rangeCount === 0) return false;
+
+    const range = selection.getRangeAt(0);
+    const node = range.startContainer;
+    const offset = range.startOffset;
+
+    const paper = paperRef.current;
+    if (!paper) return false;
+
+    const isAnnotationElement = (el) => {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+      return (
+        el.tagName === 'MARK' ||
+        el.classList?.contains('annotated-mark') ||
+        el.classList?.contains('annotated-comment') ||
+        el.classList?.contains('annotated-color') ||
+        el.hasAttribute('data-comment') ||
+        (el.style?.backgroundColor && el.style.backgroundColor !== 'transparent')
+      );
+    };
+
+    // Find outermost annotation element
+    let el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    let targetAnnotation = null;
+    while (el && el !== paper && !el.classList?.contains('markdown-body')) {
+      if (isAnnotationElement(el)) {
+        targetAnnotation = el;
+      }
+      el = el.parentElement;
+    }
+
+    if (!targetAnnotation || !paper.contains(targetAnnotation)) return false;
+
+    if (forward) {
+      // ArrowRight: Check if caret is at the end of the annotation element
+      let isAtEnd = false;
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (offset === node.nodeValue.length) {
+          let curr = node;
+          let hasFollowing = false;
+          while (curr && curr !== targetAnnotation) {
+            if (curr.nextSibling) {
+              hasFollowing = true;
+              break;
+            }
+            curr = curr.parentNode;
+          }
+          if (!hasFollowing) isAtEnd = true;
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node === targetAnnotation && offset === targetAnnotation.childNodes.length) {
+          isAtEnd = true;
+        }
+      }
+
+      if (isAtEnd) {
+        const parent = targetAnnotation.parentNode;
+        if (!parent) return false;
+
+        let next = targetAnnotation.nextSibling;
+        let zwspNode = null;
+        if (next && next.nodeType === Node.TEXT_NODE && next.nodeValue.startsWith('\u200B')) {
+          zwspNode = next;
+        } else {
+          zwspNode = document.createTextNode('\u200B');
+          parent.insertBefore(zwspNode, next);
+        }
+
+        const newRange = document.createRange();
+        newRange.setStart(zwspNode, 1);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+        return true;
+      }
+    } else {
+      // ArrowLeft: Check if caret is at the start of the annotation element
+      let isAtStart = false;
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (offset === 0) {
+          let curr = node;
+          let hasPreceding = false;
+          while (curr && curr !== targetAnnotation) {
+            if (curr.previousSibling) {
+              hasPreceding = true;
+              break;
+            }
+            curr = curr.parentNode;
+          }
+          if (!hasPreceding) isAtStart = true;
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node === targetAnnotation && offset === 0) {
+          isAtStart = true;
+        }
+      }
+
+      if (isAtStart) {
+        const parent = targetAnnotation.parentNode;
+        if (!parent) return false;
+
+        let prev = targetAnnotation.previousSibling;
+        let zwspNode = null;
+        if (prev && prev.nodeType === Node.TEXT_NODE && prev.nodeValue.endsWith('\u200B')) {
+          zwspNode = prev;
+        } else {
+          zwspNode = document.createTextNode('\u200B');
+          parent.insertBefore(zwspNode, targetAnnotation);
+        }
+
+        const newRange = document.createRange();
+        newRange.setStart(zwspNode, zwspNode.nodeValue.length);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  // Keyboard shortcut listener for Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+S, and ArrowKey exit from annotations
   useEffect(() => {
     if (!isPlayground) return;
 
     const handleKeyDown = (e) => {
+      // Exit highlight/comment formatting boundary on ArrowRight or ArrowLeft
+      if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const target = e.target;
+        const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === false);
+        if (!isInput && paperRef.current && paperRef.current.contains(target)) {
+          if (e.key === 'ArrowRight') {
+            if (exitMarkBoundary(true)) {
+              e.preventDefault();
+              return;
+            }
+          } else if (e.key === 'ArrowLeft') {
+            if (exitMarkBoundary(false)) {
+              e.preventDefault();
+              return;
+            }
+          }
+        }
+      }
+
       // Save shortcut
       if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
@@ -1159,7 +1381,7 @@ export default function MarkdownViewer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayground, hasEdits]);
+  }, [isPlayground, hasEdits, exitMarkBoundary]);
 
   // Setup click handler for copy code buttons & mermaid toggle buttons
   useEffect(() => {
