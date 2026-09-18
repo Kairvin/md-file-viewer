@@ -22,6 +22,346 @@ import PlaygroundToolbar from './PlaygroundToolbar';
 import CommentPopover from './CommentPopover';
 import ConfirmModal from './ConfirmModal';
 
+/**
+ * Safely collect all text nodes intersecting a given range inside root.
+ */
+export function getTextNodesInRange(root, range) {
+  if (!root || !range) return [];
+  const textNodes = [];
+
+  const walker = document.createTreeWalker(
+    root,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: (node) => {
+        if (!node.nodeValue || node.nodeValue.length === 0) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        try {
+          return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        } catch {
+          return NodeFilter.FILTER_REJECT;
+        }
+      }
+    }
+  );
+
+  let curr;
+  while ((curr = walker.nextNode())) {
+    textNodes.push(curr);
+  }
+  return textNodes;
+}
+
+/**
+ * Trims leading and trailing whitespace from a Range so that
+ * formatting is only applied to actual visible characters and
+ * never crosses or extracts block element boundaries (like <li> or <p>).
+ */
+export function trimRangeToText(root, range) {
+  if (!root || !range || range.collapsed) return null;
+  const rawText = range.toString();
+  if (!rawText.trim()) return null;
+
+  const textNodes = getTextNodesInRange(root, range);
+  if (textNodes.length === 0) return null;
+
+  let firstNode = null;
+  let startOffset = 0;
+
+  for (let i = 0; i < textNodes.length; i++) {
+    const node = textNodes[i];
+    const nodeStart = (node === range.startContainer) ? range.startOffset : 0;
+    const nodeEnd = (node === range.endContainer) ? range.endOffset : node.nodeValue.length;
+    if (nodeEnd <= nodeStart) continue;
+
+    const slice = node.nodeValue.substring(nodeStart, nodeEnd);
+    const nonWs = slice.search(/\S/);
+    if (nonWs !== -1) {
+      firstNode = node;
+      startOffset = nodeStart + nonWs;
+      break;
+    }
+  }
+
+  let lastNode = null;
+  let endOffset = 0;
+
+  for (let i = textNodes.length - 1; i >= 0; i--) {
+    const node = textNodes[i];
+    const nodeStart = (node === range.startContainer) ? range.startOffset : 0;
+    const nodeEnd = (node === range.endContainer) ? range.endOffset : node.nodeValue.length;
+    if (nodeEnd <= nodeStart) continue;
+
+    const slice = node.nodeValue.substring(nodeStart, nodeEnd);
+    const trailingSpacesMatch = slice.match(/\s+$/);
+    const trailingSpacesLen = trailingSpacesMatch ? trailingSpacesMatch[0].length : 0;
+    if (slice.trim().length > 0) {
+      lastNode = node;
+      endOffset = nodeEnd - trailingSpacesLen;
+      break;
+    }
+  }
+
+  if (!firstNode || !lastNode) return null;
+
+  const trimmedRange = document.createRange();
+  try {
+    trimmedRange.setStart(firstNode, startOffset);
+    trimmedRange.setEnd(lastNode, endOffset);
+  } catch (err) {
+    return range;
+  }
+
+  if (trimmedRange.collapsed || !trimmedRange.toString().trim()) {
+    return null;
+  }
+
+  return trimmedRange;
+}
+
+/**
+ * Applies highlight, text color, or comment safely at the text-node level.
+ * Never calls extractContents(), never touches or extracts <li> or <p> tags,
+ * and never breaks document structure.
+ */
+export function applyFormattingToRange(root, range, options = {}) {
+  const { type, color, commentText, inheritedBgColor } = options;
+  if (!root || !range) return [];
+
+  const textNodes = getTextNodesInRange(root, range);
+  if (textNodes.length === 0) return [];
+
+  const createdElements = [];
+
+  textNodes.forEach((node) => {
+    const isStartNode = (node === range.startContainer);
+    const isEndNode = (node === range.endContainer);
+
+    let startOffset = isStartNode ? range.startOffset : 0;
+    let endOffset = isEndNode ? range.endOffset : node.nodeValue.length;
+
+    if (startOffset > node.nodeValue.length) startOffset = node.nodeValue.length;
+    if (endOffset > node.nodeValue.length) endOffset = node.nodeValue.length;
+    if (endOffset <= startOffset) return;
+
+    // Split at end first if needed
+    let targetNode = node;
+    if (endOffset < node.nodeValue.length) {
+      targetNode.splitText(endOffset);
+    }
+    // Split at start if needed
+    if (startOffset > 0) {
+      targetNode = targetNode.splitText(startOffset);
+    }
+
+    if (!targetNode.nodeValue || targetNode.nodeValue.trim().length === 0) {
+      return;
+    }
+
+    const parent = targetNode.parentNode;
+    if (!parent) return;
+
+    if (type === 'highlight') {
+      const parentMark = parent.closest('mark');
+      if (parentMark && root.contains(parentMark)) {
+        parentMark.classList.add('annotated-mark');
+        parentMark.style.backgroundColor = color;
+        parentMark.style.color = 'inherit';
+        createdElements.push(parentMark);
+      } else {
+        const mark = document.createElement('mark');
+        mark.className = 'annotated-mark';
+        mark.style.backgroundColor = color;
+        mark.style.color = 'inherit';
+        parent.insertBefore(mark, targetNode);
+        mark.appendChild(targetNode);
+        createdElements.push(mark);
+      }
+    } else if (type === 'color') {
+      const parentSpan = parent.closest('span.annotated-color');
+      if (parentSpan && root.contains(parentSpan)) {
+        parentSpan.style.color = color;
+        createdElements.push(parentSpan);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'annotated-color';
+        span.style.color = color;
+        parent.insertBefore(span, targetNode);
+        span.appendChild(targetNode);
+        createdElements.push(span);
+      }
+    } else if (type === 'comment') {
+      const parentMark = parent.closest('mark');
+      if (parentMark && root.contains(parentMark)) {
+        parentMark.classList.add('annotated-comment');
+        parentMark.setAttribute('data-comment', commentText);
+        parentMark.title = `Comment: ${commentText}`;
+        parentMark.style.cursor = 'pointer';
+        createdElements.push(parentMark);
+      } else {
+        const mark = document.createElement('mark');
+        mark.className = 'annotated-comment';
+        mark.setAttribute('data-comment', commentText);
+        mark.title = `Comment: ${commentText}`;
+        mark.style.cursor = 'pointer';
+        if (inheritedBgColor && inheritedBgColor !== 'rgb(241, 245, 249)' && inheritedBgColor !== '#f1f5f9') {
+          mark.classList.add('annotated-mark');
+          mark.style.backgroundColor = inheritedBgColor;
+        }
+        parent.insertBefore(mark, targetNode);
+        mark.appendChild(targetNode);
+        createdElements.push(mark);
+      }
+    }
+  });
+
+  return createdElements;
+}
+
+/**
+ * Unwraps formatting tags (marks or color spans) intersecting range.
+ */
+export function unwrapFormattingInRange(root, range, options = {}) {
+  const { type = 'all' } = options; // 'highlight' | 'color' | 'all'
+  if (!root || !range) return;
+
+  if (type === 'highlight' || type === 'all') {
+    const marks = root.querySelectorAll('mark');
+    marks.forEach(mark => {
+      try {
+        if (!range.intersectsNode(mark)) return;
+      } catch {
+        return;
+      }
+
+      if (type === 'highlight') {
+        if (mark.classList.contains('annotated-comment') || mark.hasAttribute('data-comment')) {
+          mark.classList.remove('annotated-mark');
+          mark.style.backgroundColor = '';
+          mark.style.color = '';
+        } else {
+          const parent = mark.parentNode;
+          if (parent) {
+            while (mark.firstChild) {
+              parent.insertBefore(mark.firstChild, mark);
+            }
+            parent.removeChild(mark);
+            parent.normalize();
+          }
+        }
+      } else if (type === 'all') {
+        const parent = mark.parentNode;
+        if (parent) {
+          while (mark.firstChild) {
+            parent.insertBefore(mark.firstChild, mark);
+          }
+          parent.removeChild(mark);
+          parent.normalize();
+        }
+      }
+    });
+  }
+
+  if (type === 'color' || type === 'all') {
+    const colorSpans = root.querySelectorAll('span.annotated-color');
+    colorSpans.forEach(span => {
+      try {
+        if (!range.intersectsNode(span)) return;
+      } catch {
+        return;
+      }
+
+      const parent = span.parentNode;
+      if (parent) {
+        while (span.firstChild) {
+          parent.insertBefore(span.firstChild, span);
+        }
+        parent.removeChild(span);
+        parent.normalize();
+      }
+    });
+  }
+}
+
+/**
+ * Cleans up empty marks, orphan list items, and stray nodes inside lists.
+ */
+export function cleanupEmptyAnnotationsInDom(root) {
+  if (!root) return;
+
+  // 1. Remove empty marks that have no text and no comment
+  const marks = root.querySelectorAll('mark');
+  marks.forEach(mark => {
+    const text = (mark.textContent || '').trim();
+    const hasComment = mark.hasAttribute('data-comment') && mark.getAttribute('data-comment').trim();
+    if (!text && !hasComment) {
+      mark.remove();
+    }
+  });
+
+  // 2. Remove empty list items that have no text and no media
+  const listItems = root.querySelectorAll('li');
+  listItems.forEach(li => {
+    const text = (li.textContent || '').trim();
+    const hasMedia = li.querySelector('img, input, svg, code, pre, a, mark');
+    if (!text && !hasMedia) {
+      li.remove();
+    }
+  });
+
+  // 3. Remove stray elements directly inside ul/ol that are not li
+  const lists = root.querySelectorAll('ul, ol');
+  lists.forEach(list => {
+    Array.from(list.children).forEach(child => {
+      if (child.tagName !== 'LI') {
+        if (!child.textContent.trim()) {
+          child.remove();
+        } else {
+          const li = document.createElement('li');
+          list.insertBefore(li, child);
+          li.appendChild(child);
+        }
+      }
+    });
+  });
+
+  // 4. Remove empty color spans
+  const spans = root.querySelectorAll('span.annotated-color');
+  spans.forEach(span => {
+    if (!(span.textContent || '').trim()) {
+      span.remove();
+    }
+  });
+}
+
+/**
+ * Sanitizes HTML string: removes empty marks and orphan li tags, auto-repairing broken lists.
+ */
+export function sanitizePlaygroundHtml(html) {
+  if (!html || typeof html !== 'string') return html;
+
+  if (typeof window !== 'undefined' && window.DOMParser) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      cleanupEmptyAnnotationsInDom(doc.body);
+      return doc.body.innerHTML;
+    } catch (e) {
+      // Fall through to regex
+    }
+  }
+
+  // Regex fallback
+  return html
+    .replace(/<mark\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/mark>/gi, '')
+    .replace(/(<ul\b[^>]*>)\s*<mark\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/mark>/gi, '$1')
+    .replace(/<mark\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/mark>\s*(<\/ul>)/gi, '$1')
+    .replace(/<li\b[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/li>/gi, '')
+    .replace(/(<ul\b[^>]*>)\s*(<li>)/gi, '$1$2')
+    .replace(/(<\/li>)\s*(<\/ul>)/gi, '$1$2');
+}
+
 export default function MarkdownViewer({
   html,
   theme,
@@ -64,13 +404,13 @@ export default function MarkdownViewer({
   // Storage key for saving Playground edits per file
   const storageKey = `md_playground_saved_${fileName}`;
 
-  // Active HTML for playground: loads saved draft if available
+  // Active HTML for playground: loads saved draft if available, sanitizing legacy glitches
   const displayHtml = useMemo(() => {
     if (isPlayground && typeof window !== 'undefined') {
       const saved = localStorage.getItem(storageKey);
-      if (saved) return saved;
+      if (saved) return sanitizePlaygroundHtml(saved);
     }
-    return html;
+    return sanitizePlaygroundHtml(html);
   }, [isPlayground, storageKey, resetKey, html]);
 
   const hasRestoredDraft = useMemo(() => {
@@ -79,6 +419,13 @@ export default function MarkdownViewer({
     }
     return false;
   }, [isPlayground, storageKey, resetKey]);
+
+  // Clean up any empty annotations or damaged list elements directly on paper DOM
+  useEffect(() => {
+    if (paperRef.current) {
+      cleanupEmptyAnnotationsInDom(paperRef.current);
+    }
+  }, [resetKey, displayHtml]);
 
   // Responsive width mapping: full width on mobile phones, customized on tablet/desktop
   const widthClasses = {
@@ -108,6 +455,13 @@ export default function MarkdownViewer({
         return;
       }
 
+      // Edge case: selection contains only whitespace or newlines
+      const rawText = selection.toString();
+      if (!rawText || !rawText.trim()) {
+        setSelectionBox(prev => prev.visible ? { ...prev, visible: false } : prev);
+        return;
+      }
+
       const range = selection.getRangeAt(0);
       const paper = paperRef.current;
       if (!paper || !paper.contains(range.commonAncestorContainer)) {
@@ -122,7 +476,7 @@ export default function MarkdownViewer({
       }
 
       const top = rect.top - 54 < 10 ? rect.bottom + 10 : rect.top - 54;
-      const left = rect.left + (rect.width / 2) - 140;
+      const left = Math.max(16, Math.min(window.innerWidth - 320, rect.left + (rect.width / 2) - 140));
 
       setSelectionBox({
         top,
@@ -245,63 +599,39 @@ export default function MarkdownViewer({
     const range = selection.getRangeAt(0);
     if (range.collapsed) return;
 
+    const paper = paperRef.current;
+    if (!paper || !paper.contains(range.commonAncestorContainer)) return;
+
+    const trimmedRange = trimRangeToText(paper, range);
+    if (!trimmedRange) return;
+
     setHasEdits(true);
     onPlaygroundEditsChange?.(true);
 
     if (!color) {
-      document.execCommand('removeFormat', false, null);
+      unwrapFormattingInRange(paper, trimmedRange, { type: 'highlight' });
       setSelectionBox(prev => ({ ...prev, visible: false }));
       pushHistorySnapshot();
+      triggerAutoSave(true, 300);
       return;
     }
 
-    try {
-      const existingMark = range.commonAncestorContainer.nodeType === 1
-        ? range.commonAncestorContainer.closest('mark')
-        : range.commonAncestorContainer.parentElement?.closest('mark');
+    const createdElements = applyFormattingToRange(paper, trimmedRange, {
+      type: 'highlight',
+      color
+    });
 
-      if (existingMark && existingMark.textContent.trim() === range.toString().trim()) {
-        existingMark.classList.add('annotated-mark');
-        existingMark.style.backgroundColor = color;
-        pushHistorySnapshot();
-        return;
+    if (createdElements.length > 0) {
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        const newRange = document.createRange();
+        newRange.setStartBefore(createdElements[0]);
+        newRange.setEndAfter(createdElements[createdElements.length - 1]);
+        sel.addRange(newRange);
       }
-
-      const mark = document.createElement('mark');
-      mark.style.backgroundColor = color;
-      mark.style.color = 'inherit';
-      mark.className = 'annotated-mark';
-      
-      const fragment = range.extractContents();
-
-      // Unwrap any nested marks to avoid double-box stacking
-      const innerMarks = fragment.querySelectorAll('mark');
-      innerMarks.forEach(m => {
-        if (m.classList.contains('annotated-comment')) {
-          mark.classList.add('annotated-comment');
-          const comment = m.getAttribute('data-comment');
-          if (comment) {
-            mark.setAttribute('data-comment', comment);
-            mark.title = m.title;
-          }
-        }
-        const parent = m.parentNode;
-        while (m.firstChild) {
-          parent.insertBefore(m.firstChild, m);
-        }
-        parent.removeChild(m);
-      });
-
-      mark.appendChild(fragment);
-      range.insertNode(mark);
-      
-      selection.removeAllRanges();
-      const newRange = document.createRange();
-      newRange.selectNodeContents(mark);
-      selection.addRange(newRange);
-    } catch (e) {
-      document.execCommand('hiliteColor', false, color);
     }
+
     pushHistorySnapshot();
     triggerAutoSave(true, 300);
   };
@@ -312,32 +642,38 @@ export default function MarkdownViewer({
     const range = selection.getRangeAt(0);
     if (range.collapsed) return;
 
+    const paper = paperRef.current;
+    if (!paper || !paper.contains(range.commonAncestorContainer)) return;
+
+    const trimmedRange = trimRangeToText(paper, range);
+    if (!trimmedRange) return;
+
     setHasEdits(true);
     onPlaygroundEditsChange?.(true);
 
     if (!color) {
-      document.execCommand('foreColor', false, '#0f172a');
+      unwrapFormattingInRange(paper, trimmedRange, { type: 'color' });
       pushHistorySnapshot();
       triggerAutoSave(true, 300);
       return;
     }
 
-    try {
-      const span = document.createElement('span');
-      span.style.color = color;
-      span.className = 'annotated-color';
-      
-      const fragment = range.extractContents();
-      span.appendChild(fragment);
-      range.insertNode(span);
-      
-      selection.removeAllRanges();
-      const newRange = document.createRange();
-      newRange.selectNodeContents(span);
-      selection.addRange(newRange);
-    } catch (e) {
-      document.execCommand('foreColor', false, color);
+    const createdElements = applyFormattingToRange(paper, trimmedRange, {
+      type: 'color',
+      color
+    });
+
+    if (createdElements.length > 0) {
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        const newRange = document.createRange();
+        newRange.setStartBefore(createdElements[0]);
+        newRange.setEndAfter(createdElements[createdElements.length - 1]);
+        sel.addRange(newRange);
+      }
     }
+
     pushHistorySnapshot();
     triggerAutoSave(true, 300);
   };
@@ -375,9 +711,22 @@ export default function MarkdownViewer({
   };
 
   const handleClearFormat = () => {
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (range.collapsed) return;
+
+    const paper = paperRef.current;
+    if (!paper || !paper.contains(range.commonAncestorContainer)) return;
+
+    const trimmedRange = trimRangeToText(paper, range) || range;
+
     setHasEdits(true);
     onPlaygroundEditsChange?.(true);
+
+    unwrapFormattingInRange(paper, trimmedRange, { type: 'all' });
     document.execCommand('removeFormat', false, null);
+
     setSelectionBox(prev => ({ ...prev, visible: false }));
     pushHistorySnapshot();
     triggerAutoSave(true, 300);
@@ -453,9 +802,14 @@ export default function MarkdownViewer({
       return;
     }
 
-    savedRangeForCommentRef.current = range.cloneRange();
-    const selectedText = range.toString().trim();
-    const rect = range.getBoundingClientRect();
+    const trimmedRange = trimRangeToText(paper, range);
+    if (!trimmedRange || !trimmedRange.toString().trim()) {
+      return;
+    }
+
+    savedRangeForCommentRef.current = trimmedRange.cloneRange();
+    const selectedText = trimmedRange.toString().trim();
+    const rect = trimmedRange.getBoundingClientRect();
     const isAbove = rect.bottom + 230 > window.innerHeight && rect.top > 230;
 
     setCommentPopover({
@@ -480,48 +834,23 @@ export default function MarkdownViewer({
         return;
       }
 
+      const paper = paperRef.current;
+      if (!paper) {
+        setCommentPopover(prev => ({ ...prev, isOpen: false }));
+        return;
+      }
+
+      const trimmedRange = trimRangeToText(paper, range);
+      if (!trimmedRange) {
+        setCommentPopover(prev => ({ ...prev, isOpen: false }));
+        return;
+      }
+
       try {
-        // Check if the range is inside an existing highlight mark
-        const existingMark = range.commonAncestorContainer.nodeType === 1
-          ? range.commonAncestorContainer.closest('mark')
-          : range.commonAncestorContainer.parentElement?.closest('mark');
-
-        if (existingMark) {
-          // It's an existing highlight! Add comment properties directly to avoid nested box-in-box
-          existingMark.classList.add('annotated-comment');
-          existingMark.setAttribute('data-comment', commentText.trim());
-          existingMark.title = `Comment: ${commentText.trim()}`;
-          existingMark.style.cursor = 'pointer';
-        } else {
-          const fragment = range.extractContents();
-
-          // Check if the extracted fragment has any child marks and unwrap them to prevent nested marks
-          const innerMarks = fragment.querySelectorAll('mark');
-          let inheritedBgColor = null;
-          innerMarks.forEach(m => {
-            if (m.style.backgroundColor) inheritedBgColor = m.style.backgroundColor;
-            const parent = m.parentNode;
-            while (m.firstChild) {
-              parent.insertBefore(m.firstChild, m);
-            }
-            parent.removeChild(m);
-          });
-
-          const mark = document.createElement('mark');
-          mark.className = 'annotated-comment';
-          mark.setAttribute('data-comment', commentText.trim());
-          mark.title = `Comment: ${commentText.trim()}`;
-
-          if (inheritedBgColor && inheritedBgColor !== 'rgb(241, 245, 249)' && inheritedBgColor !== '#f1f5f9') {
-            mark.classList.add('annotated-mark');
-            mark.style.backgroundColor = inheritedBgColor;
-          }
-
-          mark.style.cursor = 'pointer';
-
-          mark.appendChild(fragment);
-          range.insertNode(mark);
-        }
+        applyFormattingToRange(paper, trimmedRange, {
+          type: 'comment',
+          commentText: commentText.trim()
+        });
 
         window.getSelection()?.removeAllRanges();
         savedRangeForCommentRef.current = null;
@@ -560,6 +889,7 @@ export default function MarkdownViewer({
         el.classList.remove('annotated-comment');
         el.removeAttribute('data-comment');
         el.removeAttribute('title');
+        el.style.cursor = '';
       } else {
         // Solely a comment, unwrap
         const parent = el.parentNode;
@@ -567,6 +897,7 @@ export default function MarkdownViewer({
           parent.insertBefore(el.firstChild, el);
         }
         parent.removeChild(el);
+        parent.normalize();
       }
 
       pushHistorySnapshot();

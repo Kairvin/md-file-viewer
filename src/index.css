@@ -262,6 +262,28 @@ mark,
   display: inline;
 }
 
+/* Hide empty marks or comments so empty selections never render as pills */
+mark:empty,
+.annotated-mark:empty,
+.annotated-comment:empty {
+  display: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  border: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Ensure marks inside list items behave strictly inline and never disturb bullet markers */
+.markdown-body li mark,
+.markdown-body li .annotated-mark,
+.markdown-body li .annotated-comment {
+  display: inline !important;
+  vertical-align: baseline !important;
+}
+
 /* Inline Comments - Production Grade Refined Typography (Light / Default) */
 mark.annotated-comment,
 .annotated-comment {
