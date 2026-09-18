@@ -122,6 +122,60 @@ export function trimRangeToText(root, range) {
 }
 
 /**
+ * Safely parse all comments from an annotated element.
+ * Supports multi-comments stored as JSON in data-comments,
+ * with fallback to single data-comment.
+ */
+export function parseComments(el) {
+  if (!el) return [];
+  const raw = el.getAttribute('data-comments');
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.filter(c => typeof c === 'string' && c.trim().length > 0);
+      }
+    } catch (e) {
+      console.warn('Failed to parse data-comments:', e);
+    }
+  }
+  const single = el.getAttribute('data-comment');
+  if (single && single.trim()) {
+    return [single.trim()];
+  }
+  return [];
+}
+
+/**
+ * Updates an element's comment attributes and classes.
+ * Stores full JSON array in data-comments and the latest comment in data-comment.
+ */
+export function setCommentsOnElement(el, commentsList) {
+  if (!el) return;
+  const filtered = (commentsList || [])
+    .map(c => typeof c === 'string' ? c.trim() : '')
+    .filter(Boolean);
+
+  if (filtered.length === 0) {
+    el.removeAttribute('data-comments');
+    el.removeAttribute('data-comment');
+    el.removeAttribute('data-comment-count');
+    el.removeAttribute('title');
+    el.classList.remove('annotated-comment');
+    el.style.cursor = '';
+  } else {
+    el.classList.add('annotated-comment');
+    el.setAttribute('data-comments', JSON.stringify(filtered));
+    el.setAttribute('data-comment', filtered[filtered.length - 1]);
+    el.setAttribute('data-comment-count', String(filtered.length));
+    el.title = filtered.length === 1 
+      ? `Comment: ${filtered[0]}` 
+      : `Comments (${filtered.length}):\n${filtered.map((c, i) => `${i + 1}. ${c}`).join('\n')}`;
+    el.style.cursor = 'pointer';
+  }
+}
+
+/**
  * Applies highlight, text color, or comment safely at the text-node level.
  * Never calls extractContents(), never touches or extracts <li> or <p> tags,
  * and never breaks document structure.
@@ -195,17 +249,13 @@ export function applyFormattingToRange(root, range, options = {}) {
     } else if (type === 'comment') {
       const parentMark = parent.closest('mark');
       if (parentMark && root.contains(parentMark)) {
-        parentMark.classList.add('annotated-comment');
-        parentMark.setAttribute('data-comment', commentText);
-        parentMark.title = `Comment: ${commentText}`;
-        parentMark.style.cursor = 'pointer';
+        const existing = parseComments(parentMark);
+        const newComments = existing.includes(commentText) ? existing : [...existing, commentText];
+        setCommentsOnElement(parentMark, newComments);
         createdElements.push(parentMark);
       } else {
         const mark = document.createElement('mark');
-        mark.className = 'annotated-comment';
-        mark.setAttribute('data-comment', commentText);
-        mark.title = `Comment: ${commentText}`;
-        mark.style.cursor = 'pointer';
+        setCommentsOnElement(mark, [commentText]);
         if (inheritedBgColor && inheritedBgColor !== 'rgb(241, 245, 249)' && inheritedBgColor !== '#f1f5f9') {
           mark.classList.add('annotated-mark');
           mark.style.backgroundColor = inheritedBgColor;
@@ -237,7 +287,7 @@ export function unwrapFormattingInRange(root, range, options = {}) {
       }
 
       if (type === 'highlight') {
-        if (mark.classList.contains('annotated-comment') || mark.hasAttribute('data-comment')) {
+        if (mark.classList.contains('annotated-comment') || mark.hasAttribute('data-comment') || mark.hasAttribute('data-comments')) {
           mark.classList.remove('annotated-mark');
           mark.style.backgroundColor = '';
           mark.style.color = '';
@@ -395,6 +445,8 @@ export default function MarkdownViewer({
     top: 0,
     left: 0,
     isAbove: false,
+    comments: [],
+    activeCommentIndex: 0,
     text: '',
     selectedText: '',
     targetElement: null
@@ -802,7 +854,7 @@ export default function MarkdownViewer({
     triggerAutoSave(false, 400);
   };
 
-  // Open comment popover in create mode for selected text
+  // Open comment popover in create mode for selected text (or existing comment)
   const handleOpenAddComment = () => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
@@ -823,29 +875,80 @@ export default function MarkdownViewer({
       return;
     }
 
-    savedRangeForCommentRef.current = trimmedRange.cloneRange();
+    // Check if the selection is within an existing annotated-comment
+    const existingCommentEl = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? range.commonAncestorContainer.closest('.annotated-comment')
+      : range.commonAncestorContainer.parentElement?.closest('.annotated-comment');
+
     const selectedText = trimmedRange.toString().trim();
     const rect = trimmedRange.getBoundingClientRect();
-    const isAbove = rect.bottom + 230 > window.innerHeight && rect.top > 230;
+    const isAbove = rect.bottom + 260 > window.innerHeight && rect.top > 260;
 
-    setCommentPopover({
-      isOpen: true,
-      mode: 'create',
-      top: isAbove ? Math.max(16, rect.top - 8) : rect.bottom + 8,
-      left: Math.max(16, Math.min(window.innerWidth - 320, rect.left + (rect.width / 2) - 140)),
-      isAbove,
-      text: '',
-      selectedText,
-      targetElement: null
-    });
+    if (existingCommentEl && paper.contains(existingCommentEl)) {
+      const existingComments = parseComments(existingCommentEl);
+      setCommentPopover({
+        isOpen: true,
+        mode: 'create',
+        top: isAbove ? Math.max(16, rect.top - 8) : rect.bottom + 8,
+        left: Math.max(16, Math.min(window.innerWidth - 340, rect.left + (rect.width / 2) - 150)),
+        isAbove,
+        comments: existingComments,
+        activeCommentIndex: existingComments.length,
+        text: '',
+        selectedText: existingCommentEl.textContent || selectedText,
+        targetElement: existingCommentEl
+      });
+    } else {
+      savedRangeForCommentRef.current = trimmedRange.cloneRange();
+      setCommentPopover({
+        isOpen: true,
+        mode: 'create',
+        top: isAbove ? Math.max(16, rect.top - 8) : rect.bottom + 8,
+        left: Math.max(16, Math.min(window.innerWidth - 340, rect.left + (rect.width / 2) - 150)),
+        isAbove,
+        comments: [],
+        activeCommentIndex: 0,
+        text: '',
+        selectedText,
+        targetElement: null
+      });
+    }
     setSelectionBox(prev => ({ ...prev, visible: false }));
   };
 
-  // Save comment: either wrap range as .annotated-comment or update existing element
-  const handleSaveComment = (commentText) => {
+  // Save comment: either wrap range as .annotated-comment, append to existing element, or update by index
+  const handleSaveComment = (commentText, indexToUpdate = null) => {
+    const textVal = (commentText || '').trim();
+    if (!textVal) return;
+
     if (commentPopover.mode === 'create') {
+      const targetEl = commentPopover.targetElement;
+      if (targetEl) {
+        // Appending comment to existing annotated element
+        const currentComments = parseComments(targetEl);
+        const updatedComments = [...currentComments, textVal];
+        setCommentsOnElement(targetEl, updatedComments);
+
+        pushHistorySnapshot();
+        setHasEdits(false);
+        onPlaygroundEditsChange?.(false);
+
+        // Switch to view mode at the newly appended comment
+        setCommentPopover(prev => ({
+          ...prev,
+          mode: 'view',
+          comments: updatedComments,
+          activeCommentIndex: updatedComments.length - 1,
+          text: textVal,
+          targetElement: targetEl
+        }));
+        triggerAutoSave(true, 50);
+        return;
+      }
+
+      // Brand new comment annotation on selected range
       const range = savedRangeForCommentRef.current;
-      if (!range || !commentText.trim()) {
+      if (!range) {
         setCommentPopover(prev => ({ ...prev, isOpen: false }));
         return;
       }
@@ -863,9 +966,9 @@ export default function MarkdownViewer({
       }
 
       try {
-        applyFormattingToRange(paper, trimmedRange, {
+        const createdElements = applyFormattingToRange(paper, trimmedRange, {
           type: 'comment',
-          commentText: commentText.trim()
+          commentText: textVal
         });
 
         window.getSelection()?.removeAllRanges();
@@ -874,54 +977,120 @@ export default function MarkdownViewer({
         pushHistorySnapshot();
         setHasEdits(false);
         onPlaygroundEditsChange?.(false);
+
+        const primaryEl = createdElements[0] || null;
+        if (primaryEl) {
+          const comments = parseComments(primaryEl);
+          setCommentPopover(prev => ({
+            ...prev,
+            mode: 'view',
+            comments,
+            activeCommentIndex: 0,
+            text: textVal,
+            targetElement: primaryEl
+          }));
+        } else {
+          setCommentPopover(prev => ({ ...prev, isOpen: false }));
+        }
       } catch (err) {
         console.error('Failed to create comment annotation:', err);
+        setCommentPopover(prev => ({ ...prev, isOpen: false }));
       }
 
-      setCommentPopover(prev => ({ ...prev, isOpen: false }));
-      // Immediate auto-save once user is done adding a comment
       triggerAutoSave(true, 50);
     } else if (commentPopover.mode === 'edit') {
       const el = commentPopover.targetElement;
-      if (el && commentText.trim()) {
-        el.setAttribute('data-comment', commentText.trim());
-        el.title = `Comment: ${commentText.trim()}`;
+      if (el) {
+        const currentComments = parseComments(el);
+        const editIdx = (typeof indexToUpdate === 'number' && indexToUpdate >= 0 && indexToUpdate < currentComments.length)
+          ? indexToUpdate
+          : (commentPopover.activeCommentIndex || 0);
+
+        if (currentComments.length > 0 && editIdx < currentComments.length) {
+          currentComments[editIdx] = textVal;
+        } else {
+          currentComments.push(textVal);
+        }
+        setCommentsOnElement(el, currentComments);
+
         pushHistorySnapshot();
         setHasEdits(false);
         onPlaygroundEditsChange?.(false);
+
+        setCommentPopover(prev => ({
+          ...prev,
+          mode: 'view',
+          comments: currentComments,
+          activeCommentIndex: editIdx,
+          text: textVal
+        }));
+      } else {
+        setCommentPopover(prev => ({ ...prev, isOpen: false }));
       }
-      setCommentPopover(prev => ({ ...prev, isOpen: false, text: commentText.trim() }));
-      // Immediate auto-save once user is done editing a comment
       triggerAutoSave(true, 50);
     }
   };
 
-  // Delete comment: remove comment properties or unwrap element
-  const handleDeleteComment = () => {
+  // Delete comment: if multiple comments exist, delete only the current comment;
+  // if only 1 comment exists, unwrap or strip comment styling
+  const handleDeleteComment = (indexToDelete = null) => {
     const el = commentPopover.targetElement;
-    if (el && el.parentNode) {
-      if (el.classList.contains('annotated-mark') || (el.style.backgroundColor && el.style.backgroundColor !== 'rgb(241, 245, 249)' && el.style.backgroundColor !== '#f1f5f9')) {
-        // Was also highlighted, preserve highlight and only strip comment
-        el.classList.remove('annotated-comment');
-        el.removeAttribute('data-comment');
-        el.removeAttribute('title');
-        el.style.cursor = '';
-      } else {
-        // Solely a comment, unwrap
-        const parent = el.parentNode;
-        while (el.firstChild) {
-          parent.insertBefore(el.firstChild, el);
-        }
-        parent.removeChild(el);
-        parent.normalize();
-      }
+    if (!el || !el.parentNode) {
+      setCommentPopover(prev => ({ ...prev, isOpen: false, targetElement: null }));
+      return;
+    }
+
+    const currentComments = parseComments(el);
+    const targetIndex = (typeof indexToDelete === 'number' && indexToDelete >= 0 && indexToDelete < currentComments.length)
+      ? indexToDelete
+      : (commentPopover.activeCommentIndex || 0);
+
+    if (currentComments.length > 1) {
+      // Remove only this single comment
+      const updatedComments = currentComments.filter((_, idx) => idx !== targetIndex);
+      setCommentsOnElement(el, updatedComments);
+      const nextIndex = Math.min(targetIndex, updatedComments.length - 1);
 
       pushHistorySnapshot();
       setHasEdits(false);
       onPlaygroundEditsChange?.(false);
+
+      // Keep popover open on remaining comments
+      setCommentPopover(prev => ({
+        ...prev,
+        comments: updatedComments,
+        activeCommentIndex: nextIndex,
+        text: updatedComments[nextIndex],
+        mode: 'view'
+      }));
+      triggerAutoSave(true, 50);
+      return;
     }
-    setCommentPopover(prev => ({ ...prev, isOpen: false, targetElement: null }));
-    // Immediate auto-save once comment is deleted
+
+    // Only 1 comment was present: delete whole comment annotation
+    if (el.classList.contains('annotated-mark') || (el.style.backgroundColor && el.style.backgroundColor !== 'rgb(241, 245, 249)' && el.style.backgroundColor !== '#f1f5f9')) {
+      // Was also highlighted, preserve highlight and only strip comment
+      el.classList.remove('annotated-comment');
+      el.removeAttribute('data-comment');
+      el.removeAttribute('data-comments');
+      el.removeAttribute('data-comment-count');
+      el.removeAttribute('title');
+      el.style.cursor = '';
+    } else {
+      // Solely a comment, unwrap
+      const parent = el.parentNode;
+      while (el.firstChild) {
+        parent.insertBefore(el.firstChild, el);
+      }
+      parent.removeChild(el);
+      parent.normalize();
+    }
+
+    pushHistorySnapshot();
+    setHasEdits(false);
+    onPlaygroundEditsChange?.(false);
+
+    setCommentPopover(prev => ({ ...prev, isOpen: false, targetElement: null, comments: [] }));
     triggerAutoSave(true, 50);
   };
 
@@ -1039,17 +1208,19 @@ export default function MarkdownViewer({
       if (commentEl) {
         e.preventDefault();
         e.stopPropagation();
-        const commentText = commentEl.getAttribute('data-comment') || '';
+        const comments = parseComments(commentEl);
         const rect = commentEl.getBoundingClientRect();
-        const isAbove = rect.bottom + 230 > window.innerHeight && rect.top > 230;
+        const isAbove = rect.bottom + 260 > window.innerHeight && rect.top > 260;
 
         setCommentPopover({
           isOpen: true,
           mode: 'view',
           top: isAbove ? Math.max(16, rect.top - 8) : rect.bottom + 8,
-          left: Math.max(16, Math.min(window.innerWidth - 320, rect.left + (rect.width / 2) - 140)),
+          left: Math.max(16, Math.min(window.innerWidth - 340, rect.left + (rect.width / 2) - 150)),
           isAbove,
-          text: commentText,
+          comments,
+          activeCommentIndex: 0,
+          text: comments[0] || '',
           selectedText: commentEl.textContent,
           targetElement: commentEl
         });
@@ -1277,11 +1448,13 @@ export default function MarkdownViewer({
         />
       )}
 
-      {/* Comment Popover Box (Add, View, Edit) */}
+      {/* Comment Popover Box (Add, View, Edit, Multi-comment Navigation) */}
       <CommentPopover 
         isOpen={commentPopover.isOpen}
         mode={commentPopover.mode}
         position={{ top: commentPopover.top, left: commentPopover.left, isAbove: commentPopover.isAbove }}
+        comments={commentPopover.comments || []}
+        activeCommentIndex={commentPopover.activeCommentIndex || 0}
         commentText={commentPopover.text}
         selectedText={commentPopover.selectedText}
         isPlayground={isPlayground}
