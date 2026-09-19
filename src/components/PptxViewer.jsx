@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Presentation, 
   Download, 
-  Printer, 
   PenTool, 
   Eye, 
   RotateCcw, 
@@ -15,10 +14,6 @@ import {
   ChevronRight,
   LayoutGrid,
   Columns,
-  Maximize2,
-  Minimize2,
-  Table as TableIcon,
-  Image as ImageIcon,
   PanelLeftClose,
   PanelLeftOpen
 } from 'lucide-react';
@@ -32,12 +27,195 @@ import {
   trimRangeToText,
   parseComments,
   setCommentsOnElement,
-  cleanupEmptyAnnotationsInDom,
   consolidateMarks
 } from './MarkdownViewer';
-import { downloadPresentationPdf, printToPdf } from '../utils/pdfExport';
+import { downloadPresentationPdf } from '../utils/pdfExport';
 import { savePlaygroundDraft, getPlaygroundDraft, clearPlaygroundDraft } from '../utils/storage';
 import { deduplicateText, deduplicateRuns } from '../utils/pptxParser';
+
+/**
+ * Escapes characters for HTML output
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
+ * Converts a text run to an HTML string
+ */
+function runToHtml(run) {
+  if (!run) return '';
+  if (run.isBreak) return '<br/>';
+  const clean = deduplicateText(run.text || '');
+  if (!clean) return '';
+
+  const styles = [];
+  if (run.fontFamily) styles.push(`font-family: ${escapeHtml(run.fontFamily)}`);
+  if (run.color) styles.push(`color: ${escapeHtml(run.color)}`);
+  if (run.fontSize) styles.push(`font-size: ${escapeHtml(run.fontSize)}`);
+
+  const classes = [];
+  if (run.bold) classes.push('font-bold');
+  if (run.italic) classes.push('italic');
+  if (run.underline) classes.push('underline');
+  if (run.strike) classes.push('line-through');
+
+  const styleAttr = styles.length ? ` style="${styles.join('; ')}"` : '';
+  const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
+
+  return `<span${classAttr}${styleAttr}>${escapeHtml(clean)}</span>`;
+}
+
+/**
+ * Converts an array of runs to HTML string
+ */
+function runsToHtml(runs, fallbackText = '') {
+  const sanitized = deduplicateRuns(runs);
+  if (sanitized && sanitized.length > 0) {
+    return sanitized.map(runToHtml).join('');
+  }
+  const clean = deduplicateText(fallbackText);
+  return clean ? escapeHtml(clean) : '';
+}
+
+/**
+ * Converts a single paragraph to HTML string
+ */
+function paragraphToHtml(para) {
+  const indentClass = para.level === 1 ? 'ml-6' : para.level >= 2 ? 'ml-12' : '';
+  const alignStyle = para.align ? `text-align: ${para.align};` : '';
+  const runsHtml = runsToHtml(para.runs, para.text);
+
+  let bulletHtml = '';
+  if (para.hasBullet !== false) {
+    if (para.bulletChar) {
+      bulletHtml = `<span class="bullet-symbol shrink-0 font-bold select-none text-sm leading-tight mt-1" style="color: ${escapeHtml(para.bulletColor || 'currentColor')}; margin-right: 6px;" contenteditable="false">${escapeHtml(para.bulletChar)}</span>`;
+    } else {
+      bulletHtml = `<span class="bullet-dot w-2 h-2 rounded-full mt-2 shrink-0 select-none" style="background-color: ${escapeHtml(para.bulletColor || '#3B82F6')}; margin-right: 8px;" contenteditable="false"></span>`;
+    }
+  }
+
+  return `
+    <div class="pptx-para flex items-start gap-2.5 ${indentClass}" style="${alignStyle}">
+      ${bulletHtml}
+      <div class="pptx-para-content flex-1 text-sm sm:text-base leading-relaxed text-slate-700 dark:text-slate-200 outline-none rounded px-1 transition-colors" style="${alignStyle}">
+        ${runsHtml}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Converts a table structure to HTML string
+ */
+function tableToHtml(table) {
+  if (!Array.isArray(table) || table.length === 0) return '';
+  const rowsHtml = table.map((row, rIdx) => {
+    const isHeader = rIdx === 0;
+    const rowClass = isHeader ? 'bg-slate-100 dark:bg-slate-800/80 font-semibold' : 'border-t border-slate-100 dark:border-slate-800';
+    const cellsHtml = row.map(cell => `<td class="p-3 outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 text-slate-800 dark:text-slate-200">${escapeHtml(cell)}</td>`).join('');
+    return `<tr class="${rowClass}">${cellsHtml}</tr>`;
+  }).join('');
+
+  return `
+    <div class="overflow-x-auto my-4 rounded-xl border border-slate-200 dark:border-slate-800">
+      <table class="w-full text-left text-xs sm:text-sm">
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/**
+ * Converts slide images to HTML string
+ */
+function imagesToHtml(images) {
+  if (!Array.isArray(images) || images.length === 0) return '';
+  const imgsHtml = images.map(img => `
+    <div class="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-2">
+      <img src="${img.src}" alt="${escapeHtml(img.alt || 'Slide asset')}" class="w-full h-auto object-contain max-h-64 rounded-lg select-none" />
+    </div>
+  `).join('');
+
+  return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 my-4">${imgsHtml}</div>`;
+}
+
+/**
+ * Serializes a slide object into complete rich HTML for the editable slide body
+ */
+export function slideContentToHtml(slide, slideIdx) {
+  if (!slide) return '';
+  if (slide.slideHtml) return slide.slideHtml;
+
+  const titleHtml = runsToHtml(slide.titleRuns, slide.title);
+  const subtitleHtml = runsToHtml(slide.subtitleRuns, slide.subtitle);
+
+  let bodyHtml = '';
+  if (Array.isArray(slide.textBlocks)) {
+    for (const block of slide.textBlocks) {
+      if (Array.isArray(block.paragraphs)) {
+        bodyHtml += `<div class="pptx-text-block space-y-2.5 my-2">${block.paragraphs.map(paragraphToHtml).join('')}</div>`;
+      }
+    }
+  }
+
+  let tablesHtml = '';
+  if (Array.isArray(slide.tables)) {
+    tablesHtml = slide.tables.map(tableToHtml).join('');
+  }
+
+  let imagesHtml = '';
+  if (Array.isArray(slide.images)) {
+    imagesHtml = imagesToHtml(slide.images);
+  }
+
+  const titleStyle = [
+    slide.titleFontFamily ? `font-family: ${escapeHtml(slide.titleFontFamily)}` : '',
+    slide.titleColor ? `color: ${escapeHtml(slide.titleColor)}` : ''
+  ].filter(Boolean).join('; ');
+
+  const subtitleStyle = [
+    slide.subtitleFontFamily ? `font-family: ${escapeHtml(slide.subtitleFontFamily)}` : '',
+    slide.subtitleColor ? `color: ${escapeHtml(slide.subtitleColor)}` : '',
+    slide.subtitleAlign ? `text-align: ${slide.subtitleAlign}` : ''
+  ].filter(Boolean).join('; ');
+
+  return `
+    <div class="pptx-slide-inner">
+      <div class="flex items-start justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800/80 pb-4 select-none">
+        <div class="flex-1" style="text-align: ${slide.titleAlign || 'left'};">
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight outline-none rounded px-1 transition-colors" ${titleStyle ? `style="${titleStyle}"` : ''}>
+            ${titleHtml}
+          </h2>
+          ${subtitleHtml ? `
+            <p class="text-sm sm:text-base font-medium text-slate-500 dark:text-slate-400 mt-1.5 outline-none rounded px-1 transition-colors" ${subtitleStyle ? `style="${subtitleStyle}"` : ''}>
+              ${subtitleHtml}
+            </p>
+          ` : ''}
+        </div>
+        <div class="flex items-center gap-2 shrink-0 select-none" contenteditable="false">
+          <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+            Slide ${slideIdx + 1}
+          </span>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        ${bodyHtml}
+        ${tablesHtml}
+        ${imagesHtml}
+      </div>
+    </div>
+  `.trim();
+}
 
 /**
  * Ensures any slide object (even from older cached drafts) has zero text duplication
@@ -71,7 +249,14 @@ export default function PptxViewer({
   onLoadSamplePptx,
   onOpenTools
 }) {
-  const [slides, setSlides] = useState(() => (Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : []));
+  const [slides, setSlides] = useState(() => {
+    const base = Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : [];
+    return base.map((s, idx) => ({
+      ...s,
+      slideHtml: s.slideHtml || slideContentToHtml(s, idx)
+    }));
+  });
+
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [displayMode, setDisplayMode] = useState('deck'); // 'deck' | 'flow'
   const [isPlayground, setIsPlayground] = useState(true);
@@ -95,7 +280,7 @@ export default function PptxViewer({
     activeCommentIndex: 0
   });
 
-  // History stack for Undo / Redo
+  // History stack for Undo / Redo: stores [{ slideIdx, html }]
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const historyStackRef = useRef([]);
   const historyIndexRef = useRef(-1);
@@ -103,6 +288,8 @@ export default function PptxViewer({
   const containerRef = useRef(null);
   const flowContainerRef = useRef(null);
   const deckContainerRef = useRef(null);
+  const allSlidesExportRef = useRef(null);
+  const slideRefs = useRef([]);
   const fileInputRef = useRef(null);
   const savedRangeRef = useRef(null);
   const autoSaveTimerRef = useRef(null);
@@ -110,7 +297,7 @@ export default function PptxViewer({
 
   const draftKey = `pptx_draft_${fileName}`;
 
-  // Sync slides when initialSlides changes
+  // Sync slides when initialSlides or draftKey changes
   useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -120,73 +307,81 @@ export default function PptxViewer({
           if (savedDraft) {
             const parsed = typeof savedDraft === 'string' ? JSON.parse(savedDraft) : savedDraft;
             if (Array.isArray(parsed) && parsed.length > 0) {
-              setSlides(parsed.map(sanitizeSlide));
+              setSlides(parsed.map((s, idx) => {
+                const clean = sanitizeSlide(s);
+                return {
+                  ...clean,
+                  slideHtml: clean.slideHtml || slideContentToHtml(clean, idx)
+                };
+              }));
               return;
             }
           }
-          setSlides(Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : []);
+          const base = Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : [];
+          setSlides(base.map((s, idx) => ({
+            ...s,
+            slideHtml: s.slideHtml || slideContentToHtml(s, idx)
+          })));
         }
       } catch {
-        if (isMounted) setSlides(Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : []);
+        if (isMounted) {
+          const base = Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : [];
+          setSlides(base.map((s, idx) => ({
+            ...s,
+            slideHtml: s.slideHtml || slideContentToHtml(s, idx)
+          })));
+        }
       }
     })();
     return () => { isMounted = false; };
   }, [initialSlides, draftKey]);
 
-  const currentSlide = slides[activeSlideIndex] || slides[0] || {
-    id: 'empty',
-    slideNumber: 1,
-    title: 'Empty Slide',
-    subtitle: '',
-    textBlocks: [],
-    tables: [],
-    images: []
-  };
+  // Synchronize DOM innerHTML of a slide into state
+  const syncSlideHtml = useCallback((slideIdx) => {
+    const el = slideRefs.current[slideIdx];
+    if (!el) return;
+    const cleanHtml = el.innerHTML.replace(/\u200B/g, '');
+    setSlides(prev => {
+      if (!prev[slideIdx] || prev[slideIdx].slideHtml === cleanHtml) return prev;
+      const copy = [...prev];
+      copy[slideIdx] = { ...copy[slideIdx], slideHtml: cleanHtml };
+      return copy;
+    });
+  }, []);
 
-  // Keyboard navigation in Deck mode
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-        return;
-      }
-      if (displayMode === 'deck') {
-        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-          e.preventDefault();
-          setActiveSlideIndex(prev => Math.max(0, prev - 1));
-        } else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
-          e.preventDefault();
-          setActiveSlideIndex(prev => Math.min(slides.length - 1, prev + 1));
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [displayMode, slides.length]);
-
-  // Capture DOM snapshots for Undo/Redo
-  const captureSnapshot = useCallback(() => {
-    const activeEl = displayMode === 'flow' ? flowContainerRef.current : deckContainerRef.current;
-    if (!activeEl) return;
-    const currentHtml = activeEl.innerHTML;
-    const currentIndex = historyIndexRef.current;
-    const currentStack = historyStackRef.current;
-
-    if (currentIndex >= 0 && currentStack[currentIndex] === currentHtml) {
-      return;
+  // Synchronize active or all slides
+  const syncCurrentSlideHtml = useCallback(() => {
+    if (displayMode === 'deck') {
+      syncSlideHtml(activeSlideIndex);
+    } else {
+      slideRefs.current.forEach((_, idx) => syncSlideHtml(idx));
     }
+  }, [displayMode, activeSlideIndex, syncSlideHtml]);
 
-    const newStack = currentStack.slice(0, currentIndex + 1);
-    newStack.push(currentHtml);
-    if (newStack.length > 50) newStack.shift();
+  // Push history snapshot for Undo/Redo
+  const captureSnapshot = useCallback((targetSlideIdx) => {
+    const idx = targetSlideIdx !== undefined ? targetSlideIdx : (displayMode === 'deck' ? activeSlideIndex : 0);
+    const el = slideRefs.current[idx];
+    if (!el) return;
 
-    historyStackRef.current = newStack;
-    historyIndexRef.current = newStack.length - 1;
+    const currentHtml = el.innerHTML;
+    const stack = historyStackRef.current;
+    const hIdx = historyIndexRef.current;
+
+    if (hIdx >= 0 && stack[hIdx]?.html === currentHtml && stack[hIdx]?.slideIdx === idx) return;
+
+    const nextStack = stack.slice(0, hIdx + 1);
+    nextStack.push({ slideIdx: idx, html: currentHtml });
+    if (nextStack.length > 50) nextStack.shift();
+
+    historyStackRef.current = nextStack;
+    historyIndexRef.current = nextStack.length - 1;
 
     setHistoryState({
       canUndo: historyIndexRef.current > 0,
-      canRedo: historyIndexRef.current < newStack.length - 1
+      canRedo: false
     });
-  }, [displayMode]);
+  }, [displayMode, activeSlideIndex]);
 
   // Debounced auto-save to IndexedDB
   const scheduleAutoSave = useCallback(() => {
@@ -194,6 +389,8 @@ export default function PptxViewer({
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
       try {
+        // Collect current live HTML before writing
+        syncCurrentSlideHtml();
         await savePlaygroundDraft(draftKey, slides);
         setIsJustSaved(true);
         setTimeout(() => setIsJustSaved(false), 2000);
@@ -201,76 +398,64 @@ export default function PptxViewer({
         console.error('Failed to auto-save presentation draft to IndexedDB:', err);
       }
     }, 1000);
-  }, [draftKey, slides]);
+  }, [draftKey, slides, syncCurrentSlideHtml]);
 
-  // Handle slide content editing
-  const handleSlideContentChange = useCallback((slideIdx, field, value) => {
-    setSlides(prev => {
-      const copy = [...prev];
-      if (copy[slideIdx]) {
-        copy[slideIdx] = { ...copy[slideIdx], [field]: value };
-      }
-      return copy;
-    });
+  // Handle typing input inside slide
+  const handleSlideInput = (slideIdx) => {
+    setHasEdits(true);
+    if (inputDebounceTimerRef.current) clearTimeout(inputDebounceTimerRef.current);
+    inputDebounceTimerRef.current = setTimeout(() => {
+      captureSnapshot(slideIdx);
+      syncSlideHtml(slideIdx);
+    }, 300);
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
-
-  const handleParagraphChange = useCallback((slideIdx, blockIdx, pIdx, newText) => {
-    setSlides(prev => {
-      const copy = [...prev];
-      const slide = { ...copy[slideIdx] };
-      const blocks = [...(slide.textBlocks || [])];
-      if (blocks[blockIdx]) {
-        const block = { ...blocks[blockIdx] };
-        const paragraphs = [...(block.paragraphs || [])];
-        if (paragraphs[pIdx]) {
-          paragraphs[pIdx] = {
-            ...paragraphs[pIdx],
-            runs: [{ text: newText, bold: false, italic: false }]
-          };
-          block.paragraphs = paragraphs;
-          blocks[blockIdx] = block;
-          slide.textBlocks = blocks;
-          copy[slideIdx] = slide;
-        }
-      }
-      return copy;
-    });
-    scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  };
 
   // Undo / Redo handlers
   const handleUndo = useCallback(() => {
-    const activeEl = displayMode === 'flow' ? flowContainerRef.current : deckContainerRef.current;
-    if (!activeEl || historyIndexRef.current <= 0) return;
-    historyIndexRef.current -= 1;
-    const prevHtml = historyStackRef.current[historyIndexRef.current];
-    activeEl.innerHTML = prevHtml;
-
-    setHistoryState({
-      canUndo: historyIndexRef.current > 0,
-      canRedo: historyIndexRef.current < historyStackRef.current.length - 1
-    });
-    scheduleAutoSave();
-  }, [displayMode, scheduleAutoSave]);
+    if (historyIndexRef.current > 0) {
+      historyIndexRef.current -= 1;
+      const prev = historyStackRef.current[historyIndexRef.current];
+      if (prev) {
+        const el = slideRefs.current[prev.slideIdx];
+        if (el) {
+          el.innerHTML = prev.html;
+          syncSlideHtml(prev.slideIdx);
+          setHasEdits(true);
+          scheduleAutoSave();
+        }
+      }
+      setHistoryState({
+        canUndo: historyIndexRef.current > 0,
+        canRedo: historyIndexRef.current < historyStackRef.current.length - 1
+      });
+    }
+  }, [syncSlideHtml, scheduleAutoSave]);
 
   const handleRedo = useCallback(() => {
-    const activeEl = displayMode === 'flow' ? flowContainerRef.current : deckContainerRef.current;
-    if (!activeEl || historyIndexRef.current >= historyStackRef.current.length - 1) return;
-    historyIndexRef.current += 1;
-    const nextHtml = historyStackRef.current[historyIndexRef.current];
-    activeEl.innerHTML = nextHtml;
-
-    setHistoryState({
-      canUndo: historyIndexRef.current > 0,
-      canRedo: historyIndexRef.current < historyStackRef.current.length - 1
-    });
-    scheduleAutoSave();
-  }, [displayMode, scheduleAutoSave]);
+    if (historyIndexRef.current < historyStackRef.current.length - 1) {
+      historyIndexRef.current += 1;
+      const next = historyStackRef.current[historyIndexRef.current];
+      if (next) {
+        const el = slideRefs.current[next.slideIdx];
+        if (el) {
+          el.innerHTML = next.html;
+          syncSlideHtml(next.slideIdx);
+          setHasEdits(true);
+          scheduleAutoSave();
+        }
+      }
+      setHistoryState({
+        canUndo: true,
+        canRedo: historyIndexRef.current < historyStackRef.current.length - 1
+      });
+    }
+  }, [syncSlideHtml, scheduleAutoSave]);
 
   // Manual save to IndexedDB
   const handleSaveDraft = async () => {
     try {
+      syncCurrentSlideHtml();
       await savePlaygroundDraft(draftKey, slides);
       setIsJustSaved(true);
       setHasEdits(false);
@@ -280,11 +465,18 @@ export default function PptxViewer({
     }
   };
 
-  // Reset to original PowerPoint
+  // Reset to original presentation
   const handleResetDocument = async () => {
     try {
       await clearPlaygroundDraft(draftKey);
-      setSlides(Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : []);
+      const cleanSlides = Array.isArray(initialSlides) ? initialSlides.map((s, idx) => {
+        const sanitized = sanitizeSlide(s);
+        return {
+          ...sanitized,
+          slideHtml: slideContentToHtml(sanitized, idx)
+        };
+      }) : [];
+      setSlides(cleanSlides);
       setHasEdits(false);
       setShowResetModal(false);
       historyStackRef.current = [];
@@ -295,13 +487,15 @@ export default function PptxViewer({
     }
   };
 
-  // PDF Export
+  // PDF Export: Exports all slide cards cleanly
   const handleExportPdf = async () => {
     setIsExportingPdf(true);
-    // Export presentation cards directly
-    const targetElement = flowContainerRef.current || containerRef.current;
+    syncCurrentSlideHtml();
+    
+    // We export using the dedicated allSlidesExportRef so every slide is captured
+    const targetElement = allSlidesExportRef.current || flowContainerRef.current || containerRef.current;
     if (targetElement) {
-      await downloadPresentationPdf(targetElement, fileName.replace(/\.pptx$/, '') + '.pdf');
+      await downloadPresentationPdf(targetElement, fileName.replace(/\.pptx$/i, '') + '.pdf');
     }
     setIsExportingPdf(false);
   };
@@ -325,6 +519,15 @@ export default function PptxViewer({
       return;
     }
 
+    const editableEl = sel.anchorNode.nodeType === Node.ELEMENT_NODE 
+      ? sel.anchorNode.closest('.pptx-slide-editable-body') 
+      : sel.anchorNode.parentElement?.closest('.pptx-slide-editable-body');
+
+    if (!editableEl) {
+      setSelectionBox({ top: 0, left: 0, visible: false });
+      return;
+    }
+
     const selectedText = sel.toString().trim();
     if (!selectedText) {
       setSelectionBox({ top: 0, left: 0, visible: false });
@@ -336,8 +539,8 @@ export default function PptxViewer({
 
     savedRangeRef.current = range.cloneRange();
     setSelectionBox({
-      top: rect.top - 52,
-      left: Math.max(10, rect.left + rect.width / 2),
+      top: rect.top - 54,
+      left: Math.max(16, rect.left + rect.width / 2),
       visible: true
     });
   }, [isPlayground]);
@@ -348,41 +551,212 @@ export default function PptxViewer({
     return () => document.removeEventListener('selectionchange', onSelection);
   }, [handleSelectionChange]);
 
-  // Keyboard navigation & Right Arrow escape boundary handler
-  const handleKeyDown = (e) => {
-    if (e.key === 'ArrowRight') {
-      const sel = window.getSelection();
-      if (!sel || !sel.isCollapsed || !sel.rangeCount) return;
+  // Caret boundary escape on ArrowRight / ArrowLeft
+  const exitMarkBoundary = useCallback((forward = true) => {
+    const selection = window.getSelection();
+    if (!selection || !selection.isCollapsed || selection.rangeCount === 0) return false;
 
-      const node = sel.focusNode;
-      const offset = sel.focusOffset;
-      const mark = node.nodeType === Node.TEXT_NODE 
-        ? node.parentElement?.closest('mark') 
-        : node.closest?.('mark');
+    const range = selection.getRangeAt(0);
+    const node = range.startContainer;
+    const offset = range.startOffset;
 
-      if (mark) {
-        const textLen = node.nodeType === Node.TEXT_NODE ? node.length : mark.textContent.length;
-        if (offset >= textLen) {
-          e.preventDefault();
-          const zwsp = document.createTextNode('\u200B');
-          if (mark.nextSibling) {
-            mark.parentNode.insertBefore(zwsp, mark.nextSibling);
-          } else {
-            mark.parentNode.appendChild(zwsp);
+    const container = containerRef.current;
+    if (!container) return false;
+
+    const isAnnotationElement = (el) => {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+      return (
+        el.tagName === 'MARK' ||
+        el.classList?.contains('annotated-mark') ||
+        el.classList?.contains('annotated-comment') ||
+        el.classList?.contains('annotated-color') ||
+        el.hasAttribute('data-comment')
+      );
+    };
+
+    let el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    let targetAnnotation = null;
+    while (el && el !== container && !el.classList?.contains('pptx-slide-editable-body')) {
+      if (isAnnotationElement(el)) {
+        targetAnnotation = el;
+      }
+      el = el.parentElement;
+    }
+
+    if (!targetAnnotation || !container.contains(targetAnnotation)) return false;
+
+    if (forward) {
+      let isAtEnd = false;
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (offset === node.nodeValue.length) {
+          let curr = node;
+          let hasFollowing = false;
+          while (curr && curr !== targetAnnotation) {
+            if (curr.nextSibling) {
+              hasFollowing = true;
+              break;
+            }
+            curr = curr.parentNode;
           }
-
-          const newRange = document.createRange();
-          newRange.setStart(zwsp, 1);
-          newRange.collapse(true);
-          sel.removeAllRanges();
-          sel.addRange(newRange);
+          if (!hasFollowing) isAtEnd = true;
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node === targetAnnotation && offset === targetAnnotation.childNodes.length) {
+          isAtEnd = true;
         }
       }
+
+      if (isAtEnd) {
+        const parent = targetAnnotation.parentNode;
+        if (!parent) return false;
+
+        let next = targetAnnotation.nextSibling;
+        let zwspNode = null;
+        if (next && next.nodeType === Node.TEXT_NODE && next.nodeValue.startsWith('\u200B')) {
+          zwspNode = next;
+        } else {
+          zwspNode = document.createTextNode('\u200B');
+          parent.insertBefore(zwspNode, next);
+        }
+
+        const newRange = document.createRange();
+        newRange.setStart(zwspNode, 1);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+        return true;
+      }
+    } else {
+      let isAtStart = false;
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (offset === 0) {
+          let curr = node;
+          let hasPreceding = false;
+          while (curr && curr !== targetAnnotation) {
+            if (curr.previousSibling) {
+              hasPreceding = true;
+              break;
+            }
+            curr = curr.parentNode;
+          }
+          if (!hasPreceding) isAtStart = true;
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node === targetAnnotation && offset === 0) {
+          isAtStart = true;
+        }
+      }
+
+      if (isAtStart) {
+        const parent = targetAnnotation.parentNode;
+        if (!parent) return false;
+
+        let prev = targetAnnotation.previousSibling;
+        let zwspNode = null;
+        if (prev && prev.nodeType === Node.TEXT_NODE && prev.nodeValue.endsWith('\u200B')) {
+          zwspNode = prev;
+        } else {
+          zwspNode = document.createTextNode('\u200B');
+          parent.insertBefore(zwspNode, targetAnnotation);
+        }
+
+        const newRange = document.createRange();
+        newRange.setStart(zwspNode, zwspNode.nodeValue.length);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+        return true;
+      }
     }
+    return false;
+  }, []);
+
+  // Global Keyboard shortcuts
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      // Exit formatting boundary on ArrowRight / ArrowLeft
+      if (isPlayground && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const target = e.target;
+        const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+        if (!isInput && containerRef.current && containerRef.current.contains(target)) {
+          if (e.key === 'ArrowRight') {
+            if (exitMarkBoundary(true)) {
+              e.preventDefault();
+              return;
+            }
+          } else if (e.key === 'ArrowLeft') {
+            if (exitMarkBoundary(false)) {
+              e.preventDefault();
+              return;
+            }
+          }
+        }
+      }
+
+      const isEditingText = e.target && (e.target.isContentEditable || e.target.closest?.('.pptx-slide-editable-body'));
+
+      // Save shortcut Cmd+S
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        handleSaveDraft();
+        return;
+      }
+
+      // Undo / Redo
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+        return;
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      // Strikethrough Cmd+Shift+X
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'x' || e.key === 'X')) {
+        if (isEditingText) {
+          e.preventDefault();
+          document.execCommand('strikeThrough');
+          captureSnapshot();
+          syncCurrentSlideHtml();
+          scheduleAutoSave();
+          return;
+        }
+      }
+
+      // Slide navigation in Deck mode (when not typing in editable text)
+      if (!isEditingText && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        if (displayMode === 'deck') {
+          if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+            e.preventDefault();
+            syncSlideHtml(activeSlideIndex);
+            setActiveSlideIndex(prev => Math.max(0, prev - 1));
+          } else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+            e.preventDefault();
+            syncSlideHtml(activeSlideIndex);
+            setActiveSlideIndex(prev => Math.min(slides.length - 1, prev + 1));
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isPlayground, displayMode, activeSlideIndex, slides.length, handleSaveDraft, handleUndo, handleRedo, exitMarkBoundary, syncSlideHtml, captureSnapshot, syncCurrentSlideHtml, scheduleAutoSave]);
+
+  // Helper to find root editable slide container for a range
+  const getSlideRootForRange = (range) => {
+    if (!range) return null;
+    const node = range.commonAncestorContainer;
+    return node.nodeType === Node.ELEMENT_NODE
+      ? node.closest('.pptx-slide-editable-body') || node.closest('.pptx-slide-card')
+      : node.parentElement?.closest('.pptx-slide-editable-body') || node.parentElement?.closest('.pptx-slide-card');
   };
 
   // Format Selection with Color Highlight
-  const handleFormat = (type, value) => {
+  const handleHighlight = (color) => {
     let range = savedRangeRef.current;
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
@@ -390,14 +764,45 @@ export default function PptxViewer({
     }
     if (!range) return;
 
+    const root = getSlideRootForRange(range);
+    if (!root) return;
+
+    const trimmed = trimRangeToText(root, range);
+    if (!trimmed) return;
+
     captureSnapshot();
-    const activeEl = displayMode === 'flow' ? flowContainerRef.current : deckContainerRef.current;
-    applyFormattingToRange(range, type, value, activeEl);
+    setHasEdits(true);
+
+    if (!color) {
+      unwrapFormattingInRange(root, trimmed, { type: 'highlight' });
+      setSelectionBox({ top: 0, left: 0, visible: false });
+      consolidateMarks(root);
+      syncCurrentSlideHtml();
+      scheduleAutoSave();
+      return;
+    }
+
+    const created = applyFormattingToRange(root, trimmed, { type: 'highlight', color });
+    const valid = (created || []).filter(el => root.contains(el));
+    if (valid.length > 0) {
+      const s = window.getSelection();
+      if (s) {
+        s.removeAllRanges();
+        const r = document.createRange();
+        r.setStartBefore(valid[0]);
+        r.setEndAfter(valid[valid.length - 1]);
+        s.addRange(r);
+      }
+    }
+
+    consolidateMarks(root);
     setSelectionBox({ top: 0, left: 0, visible: false });
+    syncCurrentSlideHtml();
     scheduleAutoSave();
   };
 
-  const handleClearFormatting = () => {
+  // Text Color
+  const handleTextColor = (color) => {
     let range = savedRangeRef.current;
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
@@ -405,9 +810,73 @@ export default function PptxViewer({
     }
     if (!range) return;
 
+    const root = getSlideRootForRange(range);
+    if (!root) return;
+
+    const trimmed = trimRangeToText(root, range);
+    if (!trimmed) return;
+
     captureSnapshot();
-    unwrapFormattingInRange(range);
+    setHasEdits(true);
+    applyFormattingToRange(root, trimmed, { type: 'color', color });
     setSelectionBox({ top: 0, left: 0, visible: false });
+    syncCurrentSlideHtml();
+    scheduleAutoSave();
+  };
+
+  // Clear Formatting
+  const handleClearFormat = () => {
+    let range = savedRangeRef.current;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+      range = sel.getRangeAt(0);
+    }
+    if (!range) return;
+
+    const root = getSlideRootForRange(range);
+    if (!root) return;
+
+    const trimmed = trimRangeToText(root, range);
+    if (!trimmed) return;
+
+    captureSnapshot();
+    setHasEdits(true);
+    unwrapFormattingInRange(root, trimmed, { type: 'all' });
+    setSelectionBox({ top: 0, left: 0, visible: false });
+    syncCurrentSlideHtml();
+    scheduleAutoSave();
+  };
+
+  // Document formatting execCommands
+  const handleBold = () => {
+    document.execCommand('bold');
+    captureSnapshot();
+    setHasEdits(true);
+    syncCurrentSlideHtml();
+    scheduleAutoSave();
+  };
+
+  const handleItalic = () => {
+    document.execCommand('italic');
+    captureSnapshot();
+    setHasEdits(true);
+    syncCurrentSlideHtml();
+    scheduleAutoSave();
+  };
+
+  const handleUnderline = () => {
+    document.execCommand('underline');
+    captureSnapshot();
+    setHasEdits(true);
+    syncCurrentSlideHtml();
+    scheduleAutoSave();
+  };
+
+  const handleStrikethrough = () => {
+    document.execCommand('strikeThrough');
+    captureSnapshot();
+    setHasEdits(true);
+    syncCurrentSlideHtml();
     scheduleAutoSave();
   };
 
@@ -420,17 +889,21 @@ export default function PptxViewer({
     }
     if (!range) return;
 
+    const root = getSlideRootForRange(range);
+    if (!root || !root.contains(range.commonAncestorContainer)) return;
+
+    savedRangeRef.current = range.cloneRange();
     const rect = range.getBoundingClientRect();
-    const selectedText = range.toString().trim();
+    const isAbove = rect.bottom + 250 > window.innerHeight;
 
     setCommentPopover({
       isOpen: true,
-      mode: 'add',
-      top: rect.bottom + 8,
-      left: Math.max(16, rect.left + rect.width / 2 - 160),
-      isAbove: false,
+      mode: 'create',
+      top: isAbove ? rect.top - 10 : rect.bottom + 10,
+      left: Math.max(16, Math.min(rect.left, window.innerWidth - 380)),
+      isAbove,
       text: '',
-      selectedText,
+      selectedText: range.toString().trim(),
       targetElement: null,
       comments: [],
       activeCommentIndex: 0
@@ -439,93 +912,104 @@ export default function PptxViewer({
     setSelectionBox({ top: 0, left: 0, visible: false });
   };
 
-  const handleSaveComment = (commentText) => {
-    if (!commentText.trim()) return;
-    let range = savedRangeRef.current;
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
-      range = sel.getRangeAt(0);
-    }
-    if (!range) return;
+  const handleSaveComment = (commentVal, editIndex) => {
+    const textVal = (commentVal || '').trim();
+    if (!textVal) return;
 
-    captureSnapshot();
-    const activeEl = displayMode === 'flow' ? flowContainerRef.current : deckContainerRef.current;
-    const mark = applyFormattingToRange(range, 'comment', commentText, activeEl);
+    // In Edit mode: update existing comment on target element
+    if (commentPopover.mode === 'edit' && commentPopover.targetElement) {
+      captureSnapshot();
+      setHasEdits(true);
+      const mark = commentPopover.targetElement;
+      const currentComments = parseComments(mark);
+      const targetIdx = (typeof editIndex === 'number' && editIndex >= 0) 
+        ? editIndex 
+        : (commentPopover.activeCommentIndex || 0);
 
-    if (mark) {
-      const existing = parseComments(mark);
-      existing.push({
-        id: `c_${Date.now()}`,
-        text: commentText.trim(),
-        createdAt: new Date().toISOString()
-      });
-      setCommentsOnElement(mark, existing);
-    }
-
-    setCommentPopover(prev => ({ ...prev, isOpen: false }));
-    scheduleAutoSave();
-  };
-
-  const handleDocumentClick = (e) => {
-    const mark = e.target.closest('mark[data-comment], mark.playground-comment');
-    if (mark) {
-      e.stopPropagation();
-      const comments = parseComments(mark);
-      const rect = mark.getBoundingClientRect();
-
-      setCommentPopover({
-        isOpen: true,
+      currentComments[targetIdx] = textVal;
+      setCommentsOnElement(mark, currentComments);
+      syncCurrentSlideHtml();
+      scheduleAutoSave();
+      setCommentPopover(prev => ({
+        ...prev,
         mode: 'view',
-        top: rect.bottom + 8,
-        left: Math.max(16, rect.left + rect.width / 2 - 160),
-        isAbove: false,
-        text: comments[0]?.text || '',
-        selectedText: mark.textContent,
-        targetElement: mark,
-        comments,
-        activeCommentIndex: 0
-      });
+        comments: currentComments,
+        text: textVal
+      }));
       return;
     }
 
-    if (!e.target.closest('#comment-popover') && !e.target.closest('#floating-annotation-bar')) {
+    // In Create mode: apply new comment to saved range
+    const range = savedRangeRef.current;
+    if (!range) {
+      setCommentPopover(prev => ({ ...prev, isOpen: false }));
+      return;
+    }
+
+    const root = getSlideRootForRange(range);
+    if (!root) {
+      setCommentPopover(prev => ({ ...prev, isOpen: false }));
+      return;
+    }
+
+    const trimmed = trimRangeToText(root, range);
+    if (!trimmed) {
+      setCommentPopover(prev => ({ ...prev, isOpen: false }));
+      return;
+    }
+
+    try {
+      captureSnapshot();
+      setHasEdits(true);
+      const created = applyFormattingToRange(root, trimmed, {
+        type: 'comment',
+        commentText: textVal
+      });
+
+      consolidateMarks(root);
+      syncCurrentSlideHtml();
+      scheduleAutoSave();
+
+      const primary = created[0];
+      if (primary) {
+        setCommentPopover(prev => ({
+          ...prev,
+          mode: 'view',
+          comments: parseComments(primary),
+          activeCommentIndex: 0,
+          text: textVal,
+          targetElement: primary
+        }));
+      } else {
+        setCommentPopover(prev => ({ ...prev, isOpen: false }));
+      }
+    } catch (err) {
+      console.error('Failed to create comment:', err);
       setCommentPopover(prev => ({ ...prev, isOpen: false }));
     }
-  };
-
-  const handleAddThreadComment = (commentText) => {
-    if (!commentPopover.targetElement || !commentText.trim()) return;
-    captureSnapshot();
-    const comments = parseComments(commentPopover.targetElement);
-    const newComment = {
-      id: `c_${Date.now()}`,
-      text: commentText.trim(),
-      createdAt: new Date().toISOString()
-    };
-    comments.push(newComment);
-    setCommentsOnElement(commentPopover.targetElement, comments);
-
-    setCommentPopover(prev => ({
-      ...prev,
-      comments,
-      activeCommentIndex: comments.length - 1
-    }));
-    scheduleAutoSave();
   };
 
   const handleDeleteComment = (commentId) => {
     if (!commentPopover.targetElement) return;
     captureSnapshot();
+    setHasEdits(true);
     const mark = commentPopover.targetElement;
     let comments = parseComments(mark);
-    comments = comments.filter(c => c.id !== commentId);
+
+    if (commentId) {
+      comments = comments.filter(c => (typeof c === 'object' ? c.id !== commentId : c !== commentId));
+    } else {
+      comments.splice(commentPopover.activeCommentIndex || 0, 1);
+    }
 
     if (comments.length === 0) {
       const parent = mark.parentNode;
-      while (mark.firstChild) {
-        parent.insertBefore(mark.firstChild, mark);
+      if (parent) {
+        while (mark.firstChild) {
+          parent.insertBefore(mark.firstChild, mark);
+        }
+        parent.removeChild(mark);
       }
-      parent.removeChild(mark);
       setCommentPopover(prev => ({ ...prev, isOpen: false }));
     } else {
       setCommentsOnElement(mark, comments);
@@ -535,7 +1019,47 @@ export default function PptxViewer({
         activeCommentIndex: Math.max(0, prev.activeCommentIndex - 1)
       }));
     }
+    syncCurrentSlideHtml();
     scheduleAutoSave();
+  };
+
+  const handleDocumentClick = (e) => {
+    const mark = e.target.closest('mark.annotated-comment, mark[data-comment], mark.playground-comment');
+    if (mark) {
+      e.stopPropagation();
+      const comments = parseComments(mark);
+      const rect = mark.getBoundingClientRect();
+      const isAbove = rect.bottom + 250 > window.innerHeight;
+
+      setCommentPopover({
+        isOpen: true,
+        mode: 'view',
+        top: isAbove ? rect.top - 10 : rect.bottom + 10,
+        left: Math.max(16, Math.min(rect.left, window.innerWidth - 380)),
+        isAbove,
+        text: comments[0] || '',
+        selectedText: mark.textContent,
+        targetElement: mark,
+        comments,
+        activeCommentIndex: 0
+      });
+      return;
+    }
+
+    if (!e.target.closest('#comment-popover-box') && !e.target.closest('#floating-annotation-bar') && !e.target.closest('#playground-toolbar')) {
+      setCommentPopover(prev => ({ ...prev, isOpen: false }));
+    }
+  };
+
+  const currentSlide = slides[activeSlideIndex] || slides[0] || {
+    id: 'empty',
+    slideNumber: 1,
+    title: 'Empty Slide',
+    subtitle: '',
+    textBlocks: [],
+    tables: [],
+    images: [],
+    slideHtml: ''
   };
 
   // Render a Single Slide Card
@@ -554,172 +1078,19 @@ export default function PptxViewer({
           aspectRatio: '16 / 9',
         }}
         onClick={handleDocumentClick}
-        onKeyDown={handleKeyDown}
       >
-        {/* Slide Header & Number Badge */}
-        <div className="flex items-start justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800/80 pb-4">
-          <div className="flex-1" style={{ textAlign: slide.titleAlign || 'left' }}>
-            <h2
-              contentEditable={isPlayground && isInteractive}
-              suppressContentEditableWarning
-              onBlur={(e) => handleSlideContentChange(slideIdx, 'title', e.currentTarget.innerText)}
-              className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 rounded px-1 transition-colors"
-              style={{
-                fontFamily: slide.titleFontFamily,
-                color: slide.titleColor,
-              }}
-            >
-              {slide.titleRuns && slide.titleRuns.length > 0 ? (
-                deduplicateRuns(slide.titleRuns).map((r, i) => (
-                  <span 
-                    key={`tr-${i}`} 
-                    className={`${r.bold ? 'font-bold' : ''} ${r.italic ? 'italic' : ''} ${r.underline ? 'underline' : ''} ${r.strike ? 'line-through' : ''}`}
-                    style={{ 
-                      fontFamily: r.fontFamily, 
-                      color: r.color,
-                      fontSize: r.fontSize 
-                    }}
-                  >
-                    {deduplicateText(r.text)}
-                  </span>
-                ))
-              ) : (
-                deduplicateText(slide.title)
-              )}
-            </h2>
-            {slide.subtitle && (
-              <p
-                contentEditable={isPlayground && isInteractive}
-                suppressContentEditableWarning
-                onBlur={(e) => handleSlideContentChange(slideIdx, 'subtitle', e.currentTarget.innerText)}
-                className="text-sm sm:text-base font-medium text-slate-500 dark:text-slate-400 mt-1.5 outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 rounded px-1 transition-colors"
-                style={{
-                  fontFamily: slide.subtitleFontFamily,
-                  color: slide.subtitleColor,
-                  textAlign: slide.subtitleAlign || 'left'
-                }}
-              >
-                {slide.subtitleRuns && slide.subtitleRuns.length > 0 ? (
-                  deduplicateRuns(slide.subtitleRuns).map((r, i) => (
-                    <span 
-                      key={`sr-${i}`} 
-                      className={`${r.bold ? 'font-bold' : ''} ${r.italic ? 'italic' : ''} ${r.underline ? 'underline' : ''} ${r.strike ? 'line-through' : ''}`}
-                      style={{ 
-                        fontFamily: r.fontFamily, 
-                        color: r.color,
-                        fontSize: r.fontSize 
-                      }}
-                    >
-                      {deduplicateText(r.text)}
-                    </span>
-                  ))
-                ) : (
-                  deduplicateText(slide.subtitle)
-                )}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-              Slide {slideIdx + 1}
-            </span>
-          </div>
-        </div>
-
-        {/* Slide Body Content */}
-        <div className="space-y-4">
-          {/* Text Blocks & Bullet Points */}
-          {slide.textBlocks?.map((block, bIdx) => (
-            <div key={`block-${bIdx}`} className="space-y-2.5">
-              {block.paragraphs?.map((para, pIdx) => {
-                const indentClass = para.level === 1 ? 'ml-6' : para.level >= 2 ? 'ml-12' : '';
-                const alignStyle = para.align ? { textAlign: para.align } : {};
-                const sanitizedRuns = deduplicateRuns(para.runs);
-                return (
-                  <div key={`p-${pIdx}`} className={`flex items-start gap-2.5 ${indentClass}`} style={alignStyle}>
-                    {para.hasBullet !== false && (
-                      para.bulletChar ? (
-                        <span 
-                          className="shrink-0 font-bold select-none text-sm leading-tight mt-1" 
-                          style={{ color: para.bulletColor || 'currentColor', marginRight: '2px' }}
-                        >
-                          {para.bulletChar}
-                        </span>
-                      ) : (
-                        <span 
-                          className="w-2 h-2 rounded-full mt-2 shrink-0 select-none" 
-                          style={{ backgroundColor: para.bulletColor || '#3B82F6' }}
-                        />
-                      )
-                    )}
-                    <div 
-                      contentEditable={isPlayground && isInteractive}
-                      suppressContentEditableWarning
-                      onBlur={(e) => handleParagraphChange(slideIdx, bIdx, pIdx, e.currentTarget.innerText)}
-                      className="flex-1 text-sm sm:text-base leading-relaxed text-slate-700 dark:text-slate-200 outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 rounded px-1 transition-colors"
-                      style={alignStyle}
-                    >
-                      {sanitizedRuns?.map((run, rIdx) => (
-                        <span 
-                          key={`run-${rIdx}`}
-                          className={`${run.bold ? 'font-bold' : 'font-normal'} ${run.italic ? 'italic' : ''} ${run.underline ? 'underline' : ''} ${run.strike ? 'line-through' : ''}`}
-                          style={{
-                            fontFamily: run.fontFamily,
-                            color: run.color,
-                            fontSize: run.fontSize
-                          }}
-                        >
-                          {deduplicateText(run.text)}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-
-          {/* Tables */}
-          {slide.tables?.map((table, tIdx) => (
-            <div key={`table-${tIdx}`} className="overflow-x-auto my-4 rounded-xl border border-slate-200 dark:border-slate-800">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <tbody>
-                  {table.map((row, rIdx) => (
-                    <tr 
-                      key={`tr-${rIdx}`}
-                      className={rIdx === 0 ? 'bg-slate-100 dark:bg-slate-800/80 font-semibold' : 'border-t border-slate-100 dark:border-slate-800'}
-                    >
-                      {row.map((cell, cIdx) => (
-                        <td 
-                          key={`td-${cIdx}`}
-                          contentEditable={isPlayground && isInteractive}
-                          suppressContentEditableWarning
-                          className="p-3 outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 text-slate-800 dark:text-slate-200"
-                        >
-                          {cell}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-
-          {/* Embedded Images */}
-          {slide.images?.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-4">
-              {slide.images.map((img, imgIdx) => (
-                <div key={`img-${imgIdx}`} className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-2">
-                  <img src={img.src} alt={img.alt || 'Slide asset'} className="w-full h-auto object-contain max-h-64 rounded-lg" />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Slide Content rendered via dangerouslySetInnerHTML */}
+        <div 
+          ref={(el) => { if (isInteractive) slideRefs.current[slideIdx] = el; }}
+          className="pptx-slide-editable-body w-full outline-none select-text"
+          contentEditable={isPlayground && isInteractive}
+          suppressContentEditableWarning={true}
+          onInput={() => handleSlideInput(slideIdx)}
+          dangerouslySetInnerHTML={{ __html: slide.slideHtml || slideContentToHtml(slide, slideIdx) }}
+        />
 
         {/* Slide Footer */}
-        <div className="absolute bottom-4 left-8 right-8 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800/60 pt-2">
+        <div className="absolute bottom-4 left-8 right-8 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-800/60 pt-2 select-none pointer-events-none">
           <span className="truncate max-w-[240px]">{fileName}</span>
           <span>{slideIdx + 1} / {slides.length}</span>
         </div>
@@ -728,8 +1099,8 @@ export default function PptxViewer({
   };
 
   return (
-    <div ref={containerRef} className="flex-1 flex flex-col h-full overflow-hidden bg-slate-100/70 dark:bg-slate-950 transition-colors">
-      {/* PPTX Toolbar */}
+    <div ref={containerRef} className="flex-1 flex flex-col h-full overflow-hidden bg-slate-100/70 dark:bg-slate-950 transition-colors relative">
+      {/* Top PPTX Navigation Bar */}
       <div className="h-14 px-4 sm:px-6 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs z-20">
         {/* Left: Presentation Info & View Switcher */}
         <div className="flex items-center gap-3">
@@ -756,7 +1127,7 @@ export default function PptxViewer({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-[200px] sm:max-w-xs tracking-tight">
+              <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-xs tracking-tight">
                 {fileName}
               </span>
               <span className="font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 uppercase">
@@ -771,7 +1142,10 @@ export default function PptxViewer({
           {/* View Mode Toggle: Deck vs Flow */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 ml-2">
             <button
-              onClick={() => setDisplayMode('deck')}
+              onClick={() => {
+                syncSlideHtml(activeSlideIndex);
+                setDisplayMode('deck');
+              }}
               className={`px-3 py-1 text-xs font-semibold flex items-center gap-1.5 rounded-lg transition-all ${
                 displayMode === 'deck'
                   ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
@@ -783,13 +1157,16 @@ export default function PptxViewer({
               <span className="hidden sm:inline">Deck Mode</span>
             </button>
             <button
-              onClick={() => setDisplayMode('flow')}
+              onClick={() => {
+                syncSlideHtml(activeSlideIndex);
+                setDisplayMode('flow');
+              }}
               className={`px-3 py-1 text-xs font-semibold flex items-center gap-1.5 rounded-lg transition-all ${
                 displayMode === 'flow'
                   ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
-              title="Document Flow Mode (Continuous Scroll & Print Cards)"
+              title="Document Flow Mode (Continuous Scroll & Stack)"
             >
               <Columns className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Flow Mode</span>
@@ -803,7 +1180,10 @@ export default function PptxViewer({
           {displayMode === 'deck' && slides.length > 0 && (
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
               <button
-                onClick={() => setActiveSlideIndex(prev => Math.max(0, prev - 1))}
+                onClick={() => {
+                  syncSlideHtml(activeSlideIndex);
+                  setActiveSlideIndex(prev => Math.max(0, prev - 1));
+                }}
                 disabled={activeSlideIndex === 0}
                 className="p-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
                 title="Previous Slide (Left Arrow)"
@@ -814,7 +1194,10 @@ export default function PptxViewer({
                 {activeSlideIndex + 1} / {slides.length}
               </span>
               <button
-                onClick={() => setActiveSlideIndex(prev => Math.min(slides.length - 1, prev + 1))}
+                onClick={() => {
+                  syncSlideHtml(activeSlideIndex);
+                  setActiveSlideIndex(prev => Math.min(slides.length - 1, prev + 1));
+                }}
                 disabled={activeSlideIndex === slides.length - 1}
                 className="p-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
                 title="Next Slide (Right Arrow)"
@@ -832,35 +1215,10 @@ export default function PptxViewer({
                 ? 'bg-blue-600 text-white border-blue-500 shadow-xs' 
                 : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
             }`}
-            title="Toggle Playground (Edit slide text, highlight colors, and add comments)"
+            title="Toggle Playground (Edit text, highlight colors, and add comments)"
           >
             {isPlayground ? <PenTool className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{isPlayground ? 'Playground Active' : 'Read Mode'}</span>
-          </button>
-
-          {/* Reset Draft */}
-          {hasEdits && (
-            <button
-              onClick={() => setShowResetModal(true)}
-              className="p-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white bg-white dark:bg-slate-800"
-              title="Reset slide edits"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Manual Save */}
-          <button
-            onClick={handleSaveDraft}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
-              isJustSaved
-                ? 'bg-emerald-500 text-white border-emerald-600 shadow-xs'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-            }`}
-            title="Save draft to IndexedDB"
-          >
-            {isJustSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-            <span className="hidden md:inline">{isJustSaved ? 'Saved' : 'Save'}</span>
           </button>
 
           {/* Switch Tool */}
@@ -893,6 +1251,28 @@ export default function PptxViewer({
           </button>
         </div>
       </div>
+
+      {/* Playground Toolbar (Active when Playground mode enabled) */}
+      {isPlayground && (
+        <PlaygroundToolbar 
+          onHighlight={handleHighlight}
+          onTextColor={handleTextColor}
+          onUnderline={handleUnderline}
+          onStrikethrough={handleStrikethrough}
+          onBold={handleBold}
+          onItalic={handleItalic}
+          onClearFormat={handleClearFormat}
+          onAddComment={handleOpenAddComment}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          canUndo={historyState.canUndo}
+          canRedo={historyState.canRedo}
+          onSave={handleSaveDraft}
+          onResetOriginal={() => setShowResetModal(true)}
+          hasEdits={hasEdits}
+          isJustSaved={isJustSaved}
+        />
+      )}
 
       {/* Main Slide Workspace */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex flex-col items-center">
@@ -929,7 +1309,10 @@ export default function PptxViewer({
               {slides.map((s, idx) => (
                 <button
                   key={`thumb-${idx}`}
-                  onClick={() => setActiveSlideIndex(idx)}
+                  onClick={() => {
+                    syncSlideHtml(activeSlideIndex);
+                    setActiveSlideIndex(idx);
+                  }}
                   className={`shrink-0 w-28 h-18 p-2 rounded-xl border text-left flex flex-col justify-between transition-all ${
                     activeSlideIndex === idx
                       ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/40 ring-2 ring-blue-500/30'
@@ -954,13 +1337,43 @@ export default function PptxViewer({
         )}
       </div>
 
+      {/* Off-screen staging container rendering all slides for clean multi-page landscape PDF export */}
+      <div 
+        ref={allSlidesExportRef} 
+        style={{ position: 'absolute', left: '-99999px', top: '-99999px', width: '900px', pointerEvents: 'none' }}
+        aria-hidden="true"
+      >
+        {slides.map((slide, idx) => (
+          <div 
+            key={`export-slide-${idx}`}
+            className="pptx-slide-card relative bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 mb-8 overflow-hidden"
+            style={{ minHeight: '480px', aspectRatio: '16 / 9' }}
+          >
+            <div 
+              className="pptx-slide-editable-body w-full"
+              dangerouslySetInnerHTML={{ __html: slide.slideHtml || slideContentToHtml(slide, idx) }}
+            />
+            <div className="absolute bottom-4 left-8 right-8 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 pt-2">
+              <span className="truncate max-w-[240px]">{fileName}</span>
+              <span>{idx + 1} / {slides.length}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Floating Annotation Toolbar */}
       {selectionBox.visible && isPlayground && (
         <FloatingAnnotationBar 
           position={selectionBox}
-          onFormat={handleFormat}
-          onClearFormatting={handleClearFormatting}
+          onHighlight={handleHighlight}
+          onTextColor={handleTextColor}
+          onUnderline={handleUnderline}
+          onStrikethrough={handleStrikethrough}
+          onBold={handleBold}
+          onItalic={handleItalic}
+          onClearFormat={handleClearFormat}
           onAddComment={handleOpenAddComment}
+          onClose={() => setSelectionBox(prev => ({ ...prev, visible: false }))}
         />
       )}
 
@@ -968,16 +1381,16 @@ export default function PptxViewer({
       <CommentPopover 
         isOpen={commentPopover.isOpen}
         mode={commentPopover.mode}
-        top={commentPopover.top}
-        left={commentPopover.left}
-        isAbove={commentPopover.isAbove}
+        position={{ top: commentPopover.top, left: commentPopover.left, isAbove: commentPopover.isAbove }}
+        comments={commentPopover.comments || []}
+        activeCommentIndex={commentPopover.activeCommentIndex || 0}
+        commentText={commentPopover.text}
         selectedText={commentPopover.selectedText}
-        existingComments={commentPopover.comments}
-        activeCommentIndex={commentPopover.activeCommentIndex}
-        onSaveComment={handleSaveComment}
-        onAddComment={handleAddThreadComment}
-        onDeleteComment={handleDeleteComment}
+        isPlayground={isPlayground}
+        onSave={handleSaveComment}
+        onDelete={handleDeleteComment}
         onClose={() => setCommentPopover(prev => ({ ...prev, isOpen: false }))}
+        onChangeMode={(newMode) => setCommentPopover(prev => ({ ...prev, mode: newMode }))}
       />
 
       {/* Reset Confirmation Modal */}
