@@ -484,11 +484,14 @@ export default function FileSidebar({
                           </div>
 
                           {!isEditing && (
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className={`flex items-center gap-0.5 transition-opacity ${
+                              isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                            }`}>
                               <button
                                 onClick={(e) => startRename(e, 'markdown', file.id, file.name)}
                                 className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
                                 title="Rename"
+                                aria-label="Rename document"
                               >
                                 <Pencil className="w-3 h-3" />
                               </button>
@@ -499,17 +502,19 @@ export default function FileSidebar({
                                 }}
                                 className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
                                 title="Download"
+                                aria-label="Download document"
                               >
                                 <Download className="w-3 h-3" />
                               </button>
-                              {resolvedMdFiles.length > 1 && (
+                              {resolvedDeleteMd && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    resolvedDeleteMd?.(file.id);
+                                    resolvedDeleteMd(file.id);
                                   }}
                                   className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                                  title="Delete"
+                                  title="Delete Document"
+                                  aria-label="Delete document"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
@@ -625,22 +630,26 @@ export default function FileSidebar({
                           </div>
 
                           {!isEditing && (
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className={`flex items-center gap-0.5 transition-opacity ${
+                              isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                            }`}>
                               <button
                                 onClick={(e) => startRename(e, 'word', doc.id, doc.name)}
                                 className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
                                 title="Rename"
+                                aria-label="Rename document"
                               >
                                 <Pencil className="w-3 h-3" />
                               </button>
-                              {wordFiles.length > 1 && (
+                              {onDeleteWordFile && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onDeleteWordFile?.(doc.id);
+                                    onDeleteWordFile(doc.id);
                                   }}
                                   className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                                  title="Delete"
+                                  title="Delete Document"
+                                  aria-label="Delete document"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
@@ -756,22 +765,26 @@ export default function FileSidebar({
                           </div>
 
                           {!isEditing && (
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className={`flex items-center gap-0.5 transition-opacity ${
+                              isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                            }`}>
                               <button
                                 onClick={(e) => startRename(e, 'pptx', deck.id, deck.name)}
                                 className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
                                 title="Rename"
+                                aria-label="Rename presentation"
                               >
                                 <Pencil className="w-3 h-3" />
                               </button>
-                              {pptxFiles.length > 1 && (
+                              {onDeletePptxFile && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onDeletePptxFile?.(deck.id);
+                                    onDeletePptxFile(deck.id);
                                   }}
                                   className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                                  title="Delete"
+                                  title="Delete Presentation"
+                                  aria-label="Delete presentation"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
@@ -816,39 +829,47 @@ export default function FileSidebar({
                       {filter ? 'No matching PDF files' : 'No PDF files opened yet'}
                     </div>
                   ) : (
-                    filteredPdf.map(file => (
-                      <div
-                        key={file.id}
-                        onClick={() => onSelectPdfFile ? onSelectPdfFile(file.id) : pdfInputRef.current?.click()}
-                        className={`group flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs cursor-pointer transition-all ${
-                          activeTool === 'pdf' && activePdfId === file.id
-                            ? 'bg-red-50 dark:bg-red-950/30 text-red-950 dark:text-red-200 font-semibold shadow-2xs border border-red-200/60 dark:border-red-800/40'
-                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <FileText className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs truncate font-medium">{file.name}</div>
-                            <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                              <span>{formatRelativeTime(file.updatedAt)}</span>
+                    filteredPdf.map(file => {
+                      const isPdfActive = activeTool === 'pdf' && (activePdfId === file.id || activePdfId === file.name);
+                      return (
+                        <div
+                          key={file.id}
+                          onClick={() => onSelectPdfFile ? onSelectPdfFile(file.id) : pdfInputRef.current?.click()}
+                          className={`group flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs cursor-pointer transition-all ${
+                            isPdfActive
+                              ? 'bg-red-50 dark:bg-red-950/30 text-red-950 dark:text-red-200 font-semibold shadow-2xs border border-red-200/60 dark:border-red-800/40'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+                            <FileText className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs truncate font-medium">{file.name}</div>
+                              <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                                <span>{formatRelativeTime(file.updatedAt)}</span>
+                              </div>
                             </div>
                           </div>
+                          <div className={`flex items-center gap-0.5 transition-opacity ${
+                            isPdfActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                          }`}>
+                            {onDeletePdfFile && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeletePdfFile(file.id);
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                                title="Remove PDF"
+                                aria-label="Remove PDF"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        {onDeletePdfFile && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeletePdfFile(file.id);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-600 text-slate-400 transition-opacity"
-                            title="Remove from list"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}

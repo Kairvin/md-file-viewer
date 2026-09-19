@@ -697,17 +697,38 @@ export default function App() {
   }, []);
 
   // Delete Word Document from library
-  const handleDeleteWordFile = useCallback(async (docId) => {
-    setWordFiles(prev => {
-      const next = prev.filter(f => f.id !== docId);
-      try { localStorage.setItem('docx_files_library', JSON.stringify(next)); } catch {}
-      return next;
+  const handleDeleteWordFile = useCallback((docId) => {
+    const docToDelete = wordFiles.find(f => f.id === docId);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Word Document',
+      fileName: docToDelete?.name || 'Document.docx',
+      message: 'Are you sure you want to delete this Word document? This action cannot be undone and will permanently remove all drafts and annotations.',
+      confirmLabel: 'Delete File',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        let remaining = [];
+        setWordFiles(prev => {
+          remaining = prev.filter(f => f.id !== docId);
+          try { localStorage.setItem('docx_files_library', JSON.stringify(remaining)); } catch {}
+          return remaining;
+        });
+        await removeStorageItem('documents', docId);
+
+        if (activeWordId === docId) {
+          if (remaining.length > 0) {
+            handleSelectWordFile(remaining[0].id);
+          } else {
+            setActiveWordId(null);
+            setWordData({ fileName: '', html: '' });
+            try { localStorage.removeItem('docx_active_doc'); } catch {}
+          }
+        }
+        closeConfirmModal();
+      }
     });
-    await removeStorageItem('documents', docId);
-    if (activeWordId === docId) {
-      handleSelectWordFile('sample-word-brief');
-    }
-  }, [activeWordId, handleSelectWordFile]);
+  }, [wordFiles, activeWordId, handleSelectWordFile, closeConfirmModal]);
 
   // Rename Word Document
   const handleRenameWordFile = useCallback(async (docId, newName) => {
@@ -805,17 +826,41 @@ export default function App() {
   }, []);
 
   // Delete PowerPoint Deck from library
-  const handleDeletePptxFile = useCallback(async (deckId) => {
-    setPptxFiles(prev => {
-      const next = prev.filter(f => f.id !== deckId);
-      try { localStorage.setItem('pptx_files_library', JSON.stringify(next)); } catch {}
-      return next;
+  const handleDeletePptxFile = useCallback((deckId) => {
+    const deckToDelete = pptxFiles.find(f => f.id === deckId);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete PowerPoint Presentation',
+      fileName: deckToDelete?.name || 'Presentation.pptx',
+      message: 'Are you sure you want to delete this PowerPoint deck? This action cannot be undone and will remove all cached slides.',
+      confirmLabel: 'Delete Presentation',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        let remaining = [];
+        setPptxFiles(prev => {
+          remaining = prev.filter(f => f.id !== deckId);
+          try { localStorage.setItem('pptx_files_library', JSON.stringify(remaining)); } catch {}
+          return remaining;
+        });
+        await removeStorageItem('documents', deckId);
+        if (deckToDelete) {
+          await clearPlaygroundDraft('pptx_draft_' + deckToDelete.name);
+        }
+
+        if (activePptxId === deckId) {
+          if (remaining.length > 0) {
+            handleSelectPptxFile(remaining[0].id);
+          } else {
+            setActivePptxId(null);
+            setPptxData({ fileName: '', slides: [] });
+            try { localStorage.removeItem('pptx_active_deck'); } catch {}
+          }
+        }
+        closeConfirmModal();
+      }
     });
-    await removeStorageItem('documents', deckId);
-    if (activePptxId === deckId) {
-      handleSelectPptxFile('sample-pptx-arch');
-    }
-  }, [activePptxId, handleSelectPptxFile]);
+  }, [pptxFiles, activePptxId, handleSelectPptxFile, closeConfirmModal]);
 
   // Rename PowerPoint Deck
   const handleRenamePptxFile = useCallback(async (deckId, newName) => {
@@ -900,6 +945,38 @@ export default function App() {
       showInAppAlert(err.message || 'Error opening PDF file.', 'PDF File Error', 'danger');
     }
   }, []);
+
+  // Delete PDF Document from library
+  const handleDeletePdfFile = useCallback((pdfId) => {
+    const pdfToDelete = pdfFiles.find(f => f.id === pdfId);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remove PDF Document',
+      fileName: pdfToDelete?.name || 'Document.pdf',
+      message: 'Are you sure you want to remove this PDF from your workspace files?',
+      confirmLabel: 'Remove File',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+      onConfirm: () => {
+        let remaining = [];
+        setPdfFiles(prev => {
+          remaining = prev.filter(f => f.id !== pdfId);
+          try { localStorage.setItem('pdf_files_library', JSON.stringify(remaining)); } catch {}
+          return remaining;
+        });
+
+        if (pdfData.fileName === pdfToDelete?.name) {
+          if (remaining.length > 0) {
+            setPdfData({ fileName: remaining[0].name, fileUrl: '' });
+          } else {
+            setPdfData({ fileName: '', fileUrl: '' });
+            try { localStorage.removeItem('pdf_active_doc'); } catch {}
+          }
+        }
+        closeConfirmModal();
+      }
+    });
+  }, [pdfFiles, pdfData, closeConfirmModal]);
 
   // Load Sample PPTX Deck
   const handleLoadSamplePptx = useCallback(() => {
@@ -1011,7 +1088,7 @@ export default function App() {
             pdfFiles={pdfFiles}
             activePdfId={pdfData.fileName}
             onOpenPdfFile={handleOpenPdfFile}
-            onDeletePdfFile={(id) => setPdfFiles(prev => prev.filter(f => f.id !== id))}
+            onDeletePdfFile={handleDeletePdfFile}
 
             activeTool={activeTool}
             onClose={() => setShowFileSidebar(false)}
