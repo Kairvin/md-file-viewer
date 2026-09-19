@@ -1493,6 +1493,23 @@ export default function MarkdownViewer({
         return;
       }
 
+      // Formatting shortcuts in Playground (Cmd/Ctrl + B, I, U)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        handleBold();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        handleItalic();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'u' || e.key === 'U')) {
+        e.preventDefault();
+        handleUnderline();
+        return;
+      }
+
       // Undo / Redo shortcuts
       if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
@@ -1509,7 +1526,7 @@ export default function MarkdownViewer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayground, hasEdits, exitMarkBoundary]);
+  }, [isPlayground, hasEdits, exitMarkBoundary, handleBold, handleItalic, handleUnderline]);
 
   // Setup click handler for copy code buttons & mermaid toggle buttons
   useEffect(() => {
@@ -1750,7 +1767,7 @@ export default function MarkdownViewer({
           <button 
             onClick={toggleFullscreen}
             className="p-1 sm:p-1.5 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-lg text-xs flex items-center gap-1 transition-colors"
-            title="Exit Full Screen (Esc or F)"
+            title="Exit Full Screen (Esc)"
           >
             <Minimize2 className="w-3.5 h-3.5" />
             <span className="text-[11px]">Exit</span>

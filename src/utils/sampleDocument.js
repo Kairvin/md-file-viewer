@@ -20,7 +20,7 @@ export const SAMPLE_MARKDOWN = `# MD Preview Pro 🚀
 > This previewer automatically detects GitHub-flavored markdown alerts and renders them as beautiful callout cards.
 
 > [!TIP]
-> Press <kbd>F</kbd> or click the **Full Screen** icon to enter the distraction-free reading experience.
+> Press <kbd>F11</kbd> or <kbd>⌘+Shift+F</kbd> (or <kbd>F</kbd> in preview mode) to enter the distraction-free reading experience.
 
 > [!IMPORTANT]
 > To save as a clean PDF, click **Export** → **Download PDF** or **Print to PDF** for high-resolution vector output.
@@ -149,7 +149,7 @@ You can also include inline mathematical notations such as $E = mc^2$ or $\\lim_
 
 | Action | Shortcut |
 | :--- | :--- |
-| **Toggle Full Screen** | <kbd>F</kbd> or <kbd>F11</kbd> |
+| **Toggle Full Screen** | <kbd>F11</kbd>, <kbd>⌘+Shift+F</kbd>, or <kbd>F</kbd> (in preview) |
 | **Toggle Outline TOC** | Click Outline in top bar |
 | **Switch View (Split / Preview)** | Toggle buttons in header |
 | **Export to PDF** | Click **Export PDF** in header |

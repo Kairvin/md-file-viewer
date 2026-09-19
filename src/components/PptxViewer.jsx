@@ -714,7 +714,37 @@ export default function PptxViewer({
         return;
       }
 
-      // Strikethrough Cmd+Shift+X
+      // Formatting shortcuts (Bold Cmd+B, Italic Cmd+I, Underline Cmd+U, Strikethrough Cmd+Shift+X)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'b' || e.key === 'B')) {
+        if (isEditingText) {
+          e.preventDefault();
+          document.execCommand('bold');
+          captureSnapshot();
+          syncCurrentSlideHtml();
+          scheduleAutoSave();
+          return;
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+        if (isEditingText) {
+          e.preventDefault();
+          document.execCommand('italic');
+          captureSnapshot();
+          syncCurrentSlideHtml();
+          scheduleAutoSave();
+          return;
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'u' || e.key === 'U')) {
+        if (isEditingText) {
+          e.preventDefault();
+          document.execCommand('underline');
+          captureSnapshot();
+          syncCurrentSlideHtml();
+          scheduleAutoSave();
+          return;
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'x' || e.key === 'X')) {
         if (isEditingText) {
           e.preventDefault();

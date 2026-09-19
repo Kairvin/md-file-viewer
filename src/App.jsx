@@ -480,36 +480,89 @@ export default function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Toggle sidebar with Cmd/Ctrl + B
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'b' || e.key === 'B')) {
-        e.preventDefault();
-        setShowFileSidebar(prev => !prev);
+    const isEditableElement = (el) => {
+      if (!el) return false;
+      if (el.isContentEditable) return true;
+      const tag = el.tagName ? el.tagName.toUpperCase() : '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (el.getAttribute && el.getAttribute('contenteditable') === 'true') return true;
+      if (typeof el.closest === 'function') {
+        if (el.closest('[contenteditable="true"]')) return true;
+        if (el.closest('#preview-paper, #word-paper, .pptx-slide-editable-body, .playground-paper')) return true;
       }
-      // Toggle fullscreen with F or F11 (when not typing in textarea or input)
-      if ((e.key === 'F' || e.key === 'f') && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') {
+      return false;
+    };
+
+    const isUserEditing = (e) => {
+      if (isEditableElement(e?.target)) return true;
+      if (typeof document !== 'undefined' && isEditableElement(document.activeElement)) return true;
+      return false;
+    };
+
+    const handleKeyDown = (e) => {
+      const isEditing = isUserEditing(e) || viewMode === 'playground';
+
+      // Fullscreen toggle via F11 or Cmd/Ctrl+Shift+F works globally
+      if (e.key === 'F11' || ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'F' || e.key === 'f'))) {
         e.preventDefault();
         toggleFullscreen();
+        return;
       }
+
+      // Plain 'f' or 'F' toggles fullscreen ONLY in pure read-only preview mode when NOT editing
+      if (
+        (e.key === 'f' || e.key === 'F') &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        activeTool === 'markdown' &&
+        viewMode === 'preview' &&
+        !isEditing
+      ) {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      // Toggle sidebar with Cmd/Ctrl + B (only when not editing text, so Cmd+B stays available for Bold)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'b' || e.key === 'B')) {
+        if (isEditing) {
+          // Allow bold text formatting in playground / contentEditable / editor
+          return;
+        }
+        e.preventDefault();
+        setShowFileSidebar(prev => !prev);
+        return;
+      }
+
+      // Exit fullscreen with Escape
       if (e.key === 'Escape' && isFullscreen) {
         setIsFullscreen(false);
+        return;
       }
+
       // Save / Export
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        if (viewMode === 'playground') return;
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        if (viewMode === 'playground' || activeTool !== 'markdown') return;
         e.preventDefault();
         downloadMarkdown(content, fileName);
+        return;
       }
-      // Print to PDF
-      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
-        e.preventDefault();
-        printToPdf(fileName.replace(/\.md$/, ''));
+
+      // Print to PDF (Markdown only)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+        if (activeTool === 'markdown') {
+          e.preventDefault();
+          printToPdf(fileName.replace(/\.md$/, ''));
+          return;
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen, toggleFullscreen, content, fileName, viewMode]);
+  }, [isFullscreen, toggleFullscreen, content, fileName, viewMode, activeTool]);
 
   // Fullscreen change listener
   useEffect(() => {

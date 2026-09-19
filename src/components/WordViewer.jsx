@@ -354,6 +354,29 @@ export default function WordViewer({
         return;
       }
 
+      // Formatting shortcuts in Playground (Cmd/Ctrl + B, I, U)
+      if (isPlayground && (e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        document.execCommand('bold');
+        pushHistorySnapshot();
+        triggerAutoSave(true, 300);
+        return;
+      }
+      if (isPlayground && (e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        document.execCommand('italic');
+        pushHistorySnapshot();
+        triggerAutoSave(true, 300);
+        return;
+      }
+      if (isPlayground && (e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'u' || e.key === 'U')) {
+        e.preventDefault();
+        document.execCommand('underline');
+        pushHistorySnapshot();
+        triggerAutoSave(true, 300);
+        return;
+      }
+
       // Undo / Redo
       if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
@@ -367,7 +390,7 @@ export default function WordViewer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayground, handleSavePlayground, handleUndo, handleRedo, exitMarkBoundary]);
+  }, [isPlayground, handleSavePlayground, handleUndo, handleRedo, exitMarkBoundary, pushHistorySnapshot, triggerAutoSave]);
 
   // Highlight Formatter
   const handleHighlight = (color) => {
