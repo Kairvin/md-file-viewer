@@ -6,7 +6,11 @@
 
 @layer base {
   body {
-    @apply transition-colors duration-200 antialiased font-sans;
+    @apply transition-colors duration-200 antialiased font-sans text-slate-900 dark:text-slate-100;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
