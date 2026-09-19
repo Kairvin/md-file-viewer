@@ -50,14 +50,6 @@ export default function FileSidebar({
   onDeletePptxFile,
   onRenamePptxFile,
 
-  // PDF documents
-  pdfFiles = [],
-  activePdfId,
-  onSelectPdfFile,
-  onOpenPdfFile,
-  onDeletePdfFile,
-  onRenamePdfFile,
-
   // Folders
   folders = [],
   onCreateFolder,
@@ -66,7 +58,7 @@ export default function FileSidebar({
   onMoveFileToFolder,
 
   // Current active tool
-  activeTool = 'markdown', // 'markdown' | 'word' | 'pptx' | 'pdf'
+  activeTool = 'markdown', // 'markdown' | 'word' | 'pptx'
 
   // Backward compatibility fallback props
   files = [],
@@ -90,18 +82,17 @@ export default function FileSidebar({
   const resolvedDeleteMd = onDeleteMarkdownFile || onDeleteFile;
   const resolvedImportMd = onImportMarkdownFile || onImportFile;
 
-  // Active category filter tab: 'all' | 'markdown' | 'word' | 'pptx' | 'pdf'
+  // Active category filter tab: 'all' | 'markdown' | 'word' | 'pptx'
   const [activeCategory, setActiveCategory] = useState('all');
   const [filter, setFilter] = useState('');
   const [collapsedSections, setCollapsedSections] = useState({
     markdown: false,
     word: false,
-    pptx: false,
-    pdf: false
+    pptx: false
   });
 
   // Folder creation and organization state
-  const [creatingFolderCategory, setCreatingFolderCategory] = useState(null); // 'markdown' | 'word' | 'pptx' | 'pdf' | null
+  const [creatingFolderCategory, setCreatingFolderCategory] = useState(null); // 'markdown' | 'word' | 'pptx' | null
   const [newFolderName, setNewFolderName] = useState('');
   const newFolderInputRef = useRef(null);
 
@@ -114,7 +105,7 @@ export default function FileSidebar({
   const [draggedItem, setDraggedItem] = useState(null); // { fileId, category }
   const [dragOverTarget, setDragOverTarget] = useState(null); // { type: 'folder' | 'root', id?: string, category: string }
 
-  // Inline rename state: { category: 'markdown'|'word'|'pptx'|'pdf', id: string }
+  // Inline rename state: { category: 'markdown'|'word'|'pptx', id: string }
   const [editingItem, setEditingItem] = useState(null);
   const [editName, setEditName] = useState('');
   const editInputRef = useRef(null);
@@ -123,7 +114,6 @@ export default function FileSidebar({
   const mdInputRef = useRef(null);
   const docxInputRef = useRef(null);
   const pptxInputRef = useRef(null);
-  const pdfInputRef = useRef(null);
   const anyInputRef = useRef(null);
 
   // Close on Escape on mobile
@@ -145,7 +135,7 @@ export default function FileSidebar({
     }
   }, [editingItem]);
 
-  const totalFiles = resolvedMdFiles.length + wordFiles.length + pptxFiles.length + pdfFiles.length;
+  const totalFiles = resolvedMdFiles.length + wordFiles.length + pptxFiles.length;
 
   const toggleSection = (section) => {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -154,7 +144,7 @@ export default function FileSidebar({
   const startRename = (e, category, id, currentName) => {
     e.stopPropagation();
     setEditingItem({ category, id });
-    setEditName(currentName.replace(/\.(md|markdown|docx|pptx|pdf)$/i, ''));
+    setEditName(currentName.replace(/\.(md|markdown|docx|pptx)$/i, ''));
   };
 
   const submitRename = () => {
@@ -172,8 +162,6 @@ export default function FileSidebar({
       onRenameWordFile?.(editingItem.id, `${cleanName}.docx`);
     } else if (editingItem.category === 'pptx') {
       onRenamePptxFile?.(editingItem.id, `${cleanName}.pptx`);
-    } else if (editingItem.category === 'pdf') {
-      onRenamePdfFile?.(editingItem.id, `${cleanName}.pdf`);
     }
 
     setEditingItem(null);
@@ -288,8 +276,6 @@ export default function FileSidebar({
       onImportWordFile?.(file);
     } else if (lower.endsWith('.pptx')) {
       onImportPptxFile?.(file);
-    } else if (lower.endsWith('.pdf')) {
-      onOpenPdfFile?.(file);
     } else if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.txt')) {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -300,7 +286,7 @@ export default function FileSidebar({
       };
       reader.readAsText(file);
     } else {
-      showInAppAlert(`The file "${file.name}" is not supported. Please choose a .md, .docx, .pptx, or .pdf file.`, 'Unsupported File', 'warning');
+      showInAppAlert(`The file "${file.name}" is not supported. Please choose a .md, .docx, or .pptx file.`, 'Unsupported File', 'warning');
     }
     e.target.value = '';
   };
@@ -324,7 +310,6 @@ export default function FileSidebar({
   const filteredMd = resolvedMdFiles.filter(f => !query || f.name.toLowerCase().includes(query));
   const filteredWord = wordFiles.filter(f => !query || f.name.toLowerCase().includes(query));
   const filteredPptx = pptxFiles.filter(f => !query || f.name.toLowerCase().includes(query));
-  const filteredPdf = pdfFiles.filter(f => !query || f.name.toLowerCase().includes(query));
 
   // Render a folder row with its nested files
   const renderFolderRow = (folder, folderFiles, renderCard, colorClass) => {
@@ -887,119 +872,6 @@ export default function FileSidebar({
     );
   };
 
-  // Render individual PDF document item
-  const renderPdfCard = (file, isNested = false) => {
-    const isPdfActive = activeTool === 'pdf' && (activePdfId === file.id || activePdfId === file.name);
-    const isEditing = editingItem?.category === 'pdf' && editingItem?.id === file.id;
-    const isDragging = draggedItem?.fileId === file.id;
-
-    return (
-      <div
-        key={file.id}
-        role="button"
-        tabIndex={0}
-        draggable={!isEditing}
-        onDragStart={(e) => {
-          e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: file.id, category: 'pdf' }));
-          e.dataTransfer.effectAllowed = 'move';
-          setDraggedItem({ fileId: file.id, category: 'pdf' });
-        }}
-        onDragEnd={() => {
-          setDraggedItem(null);
-          setDragOverTarget(null);
-        }}
-        data-testid={`document-item-${file.id}`}
-        data-doc-category="pdf"
-        data-in-folder={isNested ? 'true' : 'false'}
-        onClick={() => {
-          if (!isEditing) {
-            onSelectPdfFile?.(file.id);
-            if (window.innerWidth < 1024) onClose?.();
-          }
-        }}
-        onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
-            e.preventDefault();
-            onSelectPdfFile?.(file.id);
-            if (window.innerWidth < 1024) onClose?.();
-          }
-        }}
-        className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-          isDragging ? 'opacity-40 ring-2 ring-red-400' : ''
-        } ${
-          isPdfActive
-            ? 'bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-100 font-medium border border-red-200 dark:border-red-800 shadow-2xs ring-1 ring-red-500/20'
-            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
-        }`}
-      >
-        <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-          <FileText className={`w-3.5 h-3.5 shrink-0 ${isPdfActive ? 'text-red-600 dark:text-red-400' : 'text-red-500/70'}`} />
-          <div className="min-w-0 flex-1">
-            {isEditing ? (
-              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                <input 
-                  ref={editInputRef}
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={handleKeyDownRename}
-                  className="w-full text-xs bg-white dark:bg-slate-900 border border-red-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
-                />
-                <button
-                  type="button"
-                  onClick={submitRename}
-                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
-                >
-                  <Check className="w-3 h-3" />
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="text-xs truncate font-medium">{file.name}</div>
-                <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                  {file.numPages && <span>{file.numPages} {file.numPages === 1 ? 'Page' : 'Pages'} · </span>}
-                  <span>{formatRelativeTime(file.updatedAt)}</span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {!isEditing && (
-          <div className={`flex items-center gap-0.5 transition-opacity ${
-            isPdfActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-          }`}>
-            {onRenamePdfFile && (
-              <button
-                type="button"
-                onClick={(e) => startRename(e, 'pdf', file.id, file.name)}
-                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
-                title="Rename"
-                aria-label="Rename PDF"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-            )}
-            {onDeletePdfFile && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeletePdfFile(file.id);
-                }}
-                className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                title="Remove PDF"
-                aria-label="Remove PDF"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <>
       {/* Mobile Backdrop Overlay */}
@@ -1019,7 +891,7 @@ export default function FileSidebar({
           type="file" 
           ref={anyInputRef} 
           onChange={handleUniversalImport} 
-          accept=".md,.markdown,.txt,.docx,.pptx,.pdf" 
+          accept=".md,.markdown,.txt,.docx,.pptx" 
           className="hidden" 
         />
         <input 
@@ -1042,17 +914,6 @@ export default function FileSidebar({
             e.target.value = '';
           }} 
           accept=".pptx" 
-          className="hidden" 
-        />
-        <input 
-          type="file" 
-          ref={pdfInputRef} 
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onOpenPdfFile?.(f);
-            e.target.value = '';
-          }} 
-          accept=".pdf" 
           className="hidden" 
         />
 
@@ -1079,7 +940,7 @@ export default function FileSidebar({
 
         {/* Category Filter Tabs */}
         <div className="px-2 pt-3 pb-1 border-b border-slate-100 dark:border-slate-800/60">
-          <div className="grid grid-cols-5 gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
+          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
             <button
               data-testid="category-tab-all"
               onClick={() => setActiveCategory('all')}
@@ -1129,19 +990,6 @@ export default function FileSidebar({
             >
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
               .pptx
-            </button>
-            <button
-              data-testid="category-tab-pdf"
-              onClick={() => setActiveCategory('pdf')}
-              className={`py-1 text-[10px] font-bold rounded-lg transition-all text-center flex items-center justify-center gap-0.5 ${
-                activeCategory === 'pdf'
-                  ? 'bg-white dark:bg-slate-700 text-red-600 dark:text-red-400 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-              }`}
-              title="PDF Documents"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-              .pdf
             </button>
           </div>
         </div>
@@ -1378,69 +1226,6 @@ export default function FileSidebar({
                     )}
 
                     {renderRootDropzone('pptx')}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* SECTION 4: PDF DOCUMENTS */}
-          {(activeCategory === 'all' || activeCategory === 'pdf') && (() => {
-            const categoryFolders = folders.filter(f => f.category === 'pdf');
-            const rootFiles = filteredPdf.filter(f => !f.folderId || !categoryFolders.some(fol => fol.id === f.folderId));
-
-            return (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between px-2 py-1 text-slate-400 dark:text-slate-500">
-                  <button
-                    onClick={() => toggleSection('pdf')}
-                    className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                  >
-                    {collapsedSections.pdf ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                    <span className="text-red-600 dark:text-red-400 font-extrabold">PDF</span>
-                    <span className="font-mono text-[10px] text-slate-400 font-normal">({filteredPdf.length})</span>
-                  </button>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleStartCreateFolder('pdf')}
-                      className="p-1 hover:bg-slate-200/80 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-red-600 transition-colors"
-                      title="Create PDF Folder"
-                      aria-label="Add folder to PDF"
-                      data-testid="add-folder-pdf-btn"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => pdfInputRef.current?.click()}
-                      className="p-1 hover:bg-slate-200/80 dark:hover:bg-slate-800 rounded text-slate-500 hover:text-red-600 transition-colors"
-                      title="Open PDF File"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {!collapsedSections.pdf && (
-                  <div className="space-y-0.5">
-                    {renderInlineCreateFolder('pdf', 'text-red-600 dark:text-red-400')}
-
-                    {categoryFolders.map(folder => {
-                      const folderFiles = filteredPdf.filter(f => f.folderId === folder.id);
-                      return renderFolderRow(folder, folderFiles, renderPdfCard, 'text-red-500');
-                    })}
-
-                    {rootFiles.map(file => renderPdfCard(file, false))}
-
-                    {categoryFolders.length === 0 && rootFiles.length === 0 && !creatingFolderCategory && (
-                      <div className="px-3 py-2 text-xs text-slate-400 italic">
-                        {filter ? 'No matching PDF files' : 'No PDF files opened yet'}
-                      </div>
-                    )}
-
-                    {renderRootDropzone('pdf')}
                   </div>
                 )}
               </div>

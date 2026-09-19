@@ -17,15 +17,12 @@ export default function ToolsModal({
   onOpenDocxFile,
   onOpenPptxFile,
   onOpenMarkdownFile,
-  onOpenPdfFile,
   onLoadSampleWord,
-  onLoadSamplePptx,
-  onLoadSamplePdf
+  onLoadSamplePptx
 }) {
   const docxInputRef = useRef(null);
   const pptxInputRef = useRef(null);
   const mdInputRef = useRef(null);
-  const pdfInputRef = useRef(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -43,7 +40,7 @@ export default function ToolsModal({
 
   const handleFileChange = (e, handler) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (file && handler) {
       handler(file);
       onClose();
     }
@@ -97,7 +94,7 @@ export default function ToolsModal({
           {/* Right Controls */}
           <div className="flex items-center gap-2 text-xs text-[#554D40]">
             <span className="hidden sm:inline-block px-3.5 py-1.5 rounded-full bg-white/80 border border-[#E6DECB] font-semibold text-[11px] text-[#63594C] shadow-2xs">
-              4 Studios Ready
+              3 Studios Ready
             </span>
 
             {/* Close Modal Button */}
@@ -152,16 +149,9 @@ export default function ToolsModal({
           className="hidden" 
           onChange={(e) => handleFileChange(e, onOpenMarkdownFile)} 
         />
-        <input 
-          type="file" 
-          ref={pdfInputRef} 
-          accept=".pdf" 
-          className="hidden" 
-          onChange={(e) => handleFileChange(e, onOpenPdfFile)} 
-        />
 
-        {/* 4 Tool Cards Grid */}
-        <div className="relative z-10 px-6 sm:px-10 pb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6 items-stretch overflow-y-auto custom-scrollbar">
+        {/* 3 Tool Cards Grid */}
+        <div className="relative z-10 px-6 sm:px-10 pb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6 items-stretch max-w-6xl mx-auto overflow-y-auto custom-scrollbar">
           
           {/* CARD 1: .md editor */}
           {(() => {
@@ -562,147 +552,6 @@ export default function ToolsModal({
                       }`}
                     >
                       Sample Deck
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-
-          {/* CARD 4: .pdf editor */}
-          {(() => {
-            const isActive = activeTool === 'pdf';
-            return (
-              <div className={`relative rounded-[2rem] p-5 sm:p-6 flex flex-col justify-between transition-all ${
-                isActive 
-                  ? 'bg-[#232528] text-white border-2 border-[#E5C858] shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5),0_0_0_1px_rgba(229,200,88,0.4)] scale-[1.01] z-10' 
-                  : 'bg-[#F4F1E8] text-[#2D261E] border border-[#E6DECB] shadow-xs hover:shadow-md'
-              }`}>
-                <div>
-                  {/* Header: Category + Status Badge */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                        isActive ? 'bg-red-500/20 text-red-400' : 'bg-red-500/10 text-red-600'
-                      }`}>
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <span className={`text-[11px] font-mono font-bold uppercase tracking-wider ${
-                        isActive ? 'text-[#9FA6B2]' : 'text-[#796C5E]'
-                      }`}>
-                        Vector PDF
-                      </span>
-                    </div>
-
-                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border shrink-0 ${
-                      isActive 
-                        ? 'bg-[#3A3C40] text-[#F4D35E] border-[#52555C]' 
-                        : 'bg-[#ECE5D4] text-[#63594C] border-[#E0D6C1]'
-                    }`}>
-                      <span>{isActive ? 'Active' : 'Available'}</span>
-                      <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#F4D35E] animate-pulse' : 'bg-[#65973A]'}`} />
-                    </div>
-                  </div>
-
-                  <h3 className={`text-xl sm:text-2xl font-extrabold tracking-tight mb-2 ${
-                    isActive ? 'text-white' : 'text-[#232528]'
-                  }`}>
-                    .pdf editor
-                  </h3>
-
-                  {/* Subtitle / Description */}
-                  <p className={`text-xs leading-relaxed mb-4 min-h-[54px] ${
-                    isActive ? 'text-[#9FA6B2]' : 'text-[#796C5E]'
-                  }`}>
-                    High-fidelity vector PDF reader, inspector, and page navigator with 100% private client-side vector rendering.
-                  </p>
-
-                  {/* Dotted Divider */}
-                  <div className={`border-t border-dashed my-4 ${
-                    isActive ? 'border-[#3A3D42]' : 'border-[#DDD5C0]'
-                  }`} />
-
-                  {/* Feature Checklist */}
-                  <div className={`space-y-3 mb-6 text-xs ${
-                    isActive ? 'text-[#E1E4EA]' : 'text-[#4A4237]'
-                  }`}>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>Markdown-style reading paper</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>Universal playground & annotations</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>In-place text editing & highlights</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>Threaded comments & popovers</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>100% Private local rendering</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>Direct vector PDF download</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bottom Action Area */}
-                <div className="space-y-2 mt-auto">
-                  <button
-                    onClick={() => {
-                      onSelectTool('pdf');
-                      onClose();
-                    }}
-                    className={`w-full py-3 px-5 rounded-full font-bold text-xs sm:text-sm shadow-xs transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${
-                      isActive
-                        ? 'bg-white hover:bg-[#F4F1EA] text-[#1F2124] shadow-md'
-                        : 'bg-white hover:bg-[#EFE9DA] text-[#232528] border border-[#DDD5C0]'
-                    }`}
-                  >
-                    <span>{isActive ? 'Currently Active' : 'Go to Editor'}</span>
-                  </button>
-                  <div className={`flex items-center justify-center gap-2 text-[11px] ${
-                    isActive ? 'text-[#9FA6B2]' : 'text-[#796C5E]'
-                  }`}>
-                    <button
-                      onClick={() => pdfInputRef.current?.click()}
-                      className={`underline transition-colors ${
-                        isActive ? 'hover:text-white' : 'hover:text-[#232528]'
-                      }`}
-                    >
-                      Open .pdf
-                    </button>
-                    <span>·</span>
-                    <button
-                      onClick={() => {
-                        onLoadSamplePdf?.();
-                        onClose();
-                      }}
-                      className={`underline transition-colors ${
-                        isActive ? 'hover:text-white' : 'hover:text-[#232528]'
-                      }`}
-                    >
-                      Sample Report
                     </button>
                   </div>
                 </div>
