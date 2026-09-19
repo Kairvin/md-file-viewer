@@ -5,8 +5,14 @@ import MarkdownEditor from './components/MarkdownEditor';
 import TableOfContents from './components/TableOfContents';
 import FileSidebar from './components/FileSidebar';
 import ConfirmModal from './components/ConfirmModal';
+import ToolsModal from './components/ToolsModal';
+import WordViewer from './components/WordViewer';
+import PptxViewer from './components/PptxViewer';
 import { parseMarkdown } from './utils/markdownParser';
 import { SAMPLE_MARKDOWN } from './utils/sampleDocument';
+import { parseDocxFile, SAMPLE_WORD_HTML } from './utils/docxParser';
+import { parsePptxFile, SAMPLE_PRESENTATION_SLIDES } from './utils/pptxParser';
+import { showInAppAlert } from './utils/alerts';
 import { printToPdf, downloadDirectPdf, downloadMarkdown, downloadHtml } from './utils/pdfExport';
 
 // Additional templates
@@ -161,6 +167,42 @@ export default function App() {
   const [showToc, setShowToc] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [hasPlaygroundEdits, setHasPlaygroundEdits] = useState(false);
+
+  // Active Tool: 'markdown' | 'word' | 'pptx'
+  const [activeTool, setActiveTool] = useState(() => {
+    return localStorage.getItem('md_active_tool') || 'markdown';
+  });
+
+  const [showToolsModal, setShowToolsModal] = useState(false);
+
+  // Word Document state
+  const [wordData, setWordData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('docx_active_doc');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      fileName: 'Sample-Executive-Brief.docx',
+      html: SAMPLE_WORD_HTML
+    };
+  });
+
+  // PowerPoint Presentation state
+  const [pptxData, setPptxData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pptx_active_deck');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      fileName: 'Sample-Architecture-Review.pptx',
+      slides: SAMPLE_PRESENTATION_SLIDES
+    };
+  });
+
+  // Sync active tool to localStorage
+  useEffect(() => {
+    localStorage.setItem('md_active_tool', activeTool);
+  }, [activeTool]);
 
   // In-App Confirmation & Alert Modal state
   const [confirmModal, setConfirmModal] = useState({
@@ -547,6 +589,106 @@ export default function App() {
     loadSample();
   };
 
+  // Open & Parse Word (.docx) file
+  const handleOpenDocxFile = useCallback(async (file) => {
+    if (!file) return;
+    try {
+      const result = await parseDocxFile(file);
+      if (result.success) {
+        const newDoc = { fileName: file.name, html: result.html };
+        setWordData(newDoc);
+        try { localStorage.setItem('docx_active_doc', JSON.stringify(newDoc)); } catch {}
+        setActiveTool('word');
+        showInAppAlert(`Loaded Word document "${file.name}" with ${result.stats?.words || 0} words.`, 'Word File Ready', 'info');
+      } else {
+        showInAppAlert(result.error || 'Failed to parse Word document.', 'Word File Error', 'danger');
+      }
+    } catch (err) {
+      showInAppAlert(err.message || 'Error reading Word file.', 'Word File Error', 'danger');
+    }
+  }, []);
+
+  // Open & Parse PowerPoint (.pptx) file
+  const handleOpenPptxFile = useCallback(async (file) => {
+    if (!file) return;
+    try {
+      const result = await parsePptxFile(file);
+      if (result.success && result.slides?.length > 0) {
+        const newDeck = { fileName: file.name, slides: result.slides };
+        setPptxData(newDeck);
+        try { localStorage.setItem('pptx_active_deck', JSON.stringify(newDeck)); } catch {}
+        setActiveTool('pptx');
+        showInAppAlert(`Loaded presentation "${file.name}" with ${result.slides.length} slides.`, 'Presentation Ready', 'info');
+      } else {
+        showInAppAlert(result.error || 'No slides could be extracted from this PowerPoint presentation.', 'PowerPoint File Error', 'danger');
+      }
+    } catch (err) {
+      showInAppAlert(err.message || 'Error reading PowerPoint file.', 'PowerPoint File Error', 'danger');
+    }
+  }, []);
+
+  // Load sample Word document
+  const handleLoadSampleWord = useCallback(() => {
+    const sample = {
+      fileName: 'Sample-Executive-Brief.docx',
+      html: SAMPLE_WORD_HTML
+    };
+    setWordData(sample);
+    try { localStorage.setItem('docx_active_doc', JSON.stringify(sample)); } catch {}
+    setActiveTool('word');
+  }, []);
+
+  // Load sample PowerPoint presentation
+  const handleLoadSamplePptx = useCallback(() => {
+    const sample = {
+      fileName: 'Sample-Architecture-Review.pptx',
+      slides: SAMPLE_PRESENTATION_SLIDES
+    };
+    setPptxData(sample);
+    try { localStorage.setItem('pptx_active_deck', JSON.stringify(sample)); } catch {}
+    setActiveTool('pptx');
+  }, []);
+
+  // Global file drag-and-drop router across formats (.md, .docx, .pptx)
+  useEffect(() => {
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const handleDrop = (e) => {
+      if (e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const droppedFiles = e.dataTransfer?.files;
+      if (!droppedFiles || droppedFiles.length === 0) return;
+
+      const file = droppedFiles[0];
+      const lower = file.name.toLowerCase();
+
+      if (lower.endsWith('.docx')) {
+        handleOpenDocxFile(file);
+      } else if (lower.endsWith('.pptx')) {
+        handleOpenPptxFile(file);
+      } else if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.txt')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setActiveTool('markdown');
+          handleOpenFile(file.name, event.target.result);
+        };
+        reader.readAsText(file);
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [handleOpenDocxFile, handleOpenPptxFile, handleOpenFile]);
+
   const handlePrintPdf = () => {
     printToPdf(fileName.replace(/\.md$/, ''));
   };
@@ -570,89 +712,137 @@ export default function App() {
 
   return (
     <div id="app-container" className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 transition-colors">
-      {/* Top Navigation Bar */}
-      {!isFullscreen && (
-        <Navbar 
-          fileName={fileName}
-          setFileName={handleFileNameChange}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
+      {/* Main Workspace depending on activeTool */}
+      {activeTool === 'word' ? (
+        <WordViewer 
+          html={wordData.html}
+          fileName={wordData.fileName}
           theme={theme}
-          setTheme={setTheme}
-          isFullscreen={isFullscreen}
-          toggleFullscreen={toggleFullscreen}
-          showToc={showToc}
-          setShowToc={setShowToc}
-          showFileSidebar={showFileSidebar}
-          onToggleSidebar={() => setShowFileSidebar(prev => !prev)}
-          columnWidth={columnWidth}
-          setColumnWidth={setColumnWidth}
-          onNewFile={handleNewFile}
-          onOpenFile={handleOpenFile}
-          onLoadSample={handleLoadSample}
-          onPrintPdf={handlePrintPdf}
-          onDirectPdfDownload={handleDirectPdfDownload}
-          onExportMarkdown={handleExportMarkdown}
-          onExportHtml={handleExportHtml}
-          stats={stats}
-          isExportingPdf={isExportingPdf}
+          onOpenFile={handleOpenDocxFile}
+          onLoadSampleWord={handleLoadSampleWord}
+          onOpenTools={() => setShowToolsModal(true)}
         />
+      ) : activeTool === 'pptx' ? (
+        <PptxViewer 
+          slides={pptxData.slides}
+          fileName={pptxData.fileName}
+          theme={theme}
+          onOpenFile={handleOpenPptxFile}
+          onLoadSamplePptx={handleLoadSamplePptx}
+          onOpenTools={() => setShowToolsModal(true)}
+        />
+      ) : (
+        <>
+          {/* Top Navigation Bar for Markdown */}
+          {!isFullscreen && (
+            <Navbar 
+              fileName={fileName}
+              setFileName={handleFileNameChange}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              theme={theme}
+              setTheme={setTheme}
+              isFullscreen={isFullscreen}
+              toggleFullscreen={toggleFullscreen}
+              showToc={showToc}
+              setShowToc={setShowToc}
+              showFileSidebar={showFileSidebar}
+              onToggleSidebar={() => setShowFileSidebar(prev => !prev)}
+              columnWidth={columnWidth}
+              setColumnWidth={setColumnWidth}
+              onNewFile={handleNewFile}
+              onOpenFile={handleOpenFile}
+              onLoadSample={handleLoadSample}
+              onPrintPdf={handlePrintPdf}
+              onDirectPdfDownload={handleDirectPdfDownload}
+              onExportMarkdown={handleExportMarkdown}
+              onExportHtml={handleExportHtml}
+              stats={stats}
+              isExportingPdf={isExportingPdf}
+              activeTool={activeTool}
+              onOpenTools={() => setShowToolsModal(true)}
+            />
+          )}
+
+          {/* Main Markdown Workspace */}
+          <div id="main-content" className="flex-1 flex overflow-hidden relative">
+            {/* Document Library Sidebar */}
+            {!isFullscreen && showFileSidebar && (
+              <FileSidebar 
+                files={files}
+                activeFileId={activeFile.id}
+                onSelectFile={handleSelectFile}
+                onNewFile={handleNewFile}
+                onRenameFile={handleRenameFile}
+                onDeleteFile={handleDeleteFile}
+                onImportFile={handleOpenFile}
+                onClose={() => setShowFileSidebar(false)}
+              />
+            )}
+
+            {/* Editor Pane (when Split or Editor mode) */}
+            {!isFullscreen && (viewMode === 'split' || viewMode === 'editor') && (
+              <MarkdownEditor 
+                content={content}
+                onChange={handleContentChange}
+                onDropFile={handleOpenFile}
+              />
+            )}
+
+            {/* Preview / Playground Pane (when Split, Preview, or Playground mode or Fullscreen) */}
+            {(isFullscreen || viewMode === 'split' || viewMode === 'preview' || viewMode === 'playground') && (
+              <MarkdownViewer 
+                html={html}
+                fileName={fileName}
+                theme={theme}
+                setTheme={setTheme}
+                isFullscreen={isFullscreen}
+                toggleFullscreen={toggleFullscreen}
+                columnWidth={columnWidth}
+                setColumnWidth={setColumnWidth}
+                onPrintPdf={handlePrintPdf}
+                onDirectPdfDownload={handleDirectPdfDownload}
+                onDropFile={handleOpenFile}
+                isPlayground={viewMode === 'playground'}
+                onTogglePlayground={() => setViewMode(viewMode === 'playground' ? 'preview' : 'playground')}
+                isExportingPdf={isExportingPdf}
+                onPlaygroundEditsChange={setHasPlaygroundEdits}
+              />
+            )}
+
+            {/* Table of Contents Drawer */}
+            {!isFullscreen && showToc && (
+              <TableOfContents 
+                toc={toc} 
+                onClose={() => setShowToc(false)} 
+              />
+            )}
+          </div>
+        </>
       )}
 
-      {/* Main Workspace */}
-      <div id="main-content" className="flex-1 flex overflow-hidden relative">
-        {/* Document Library Sidebar */}
-        {!isFullscreen && showFileSidebar && (
-          <FileSidebar 
-            files={files}
-            activeFileId={activeFile.id}
-            onSelectFile={handleSelectFile}
-            onNewFile={handleNewFile}
-            onRenameFile={handleRenameFile}
-            onDeleteFile={handleDeleteFile}
-            onImportFile={handleOpenFile}
-            onClose={() => setShowFileSidebar(false)}
-          />
-        )}
-
-        {/* Editor Pane (when Split or Editor mode) */}
-        {!isFullscreen && (viewMode === 'split' || viewMode === 'editor') && (
-          <MarkdownEditor 
-            content={content}
-            onChange={handleContentChange}
-            onDropFile={handleOpenFile}
-          />
-        )}
-
-        {/* Preview / Playground Pane (when Split, Preview, or Playground mode or Fullscreen) */}
-        {(isFullscreen || viewMode === 'split' || viewMode === 'preview' || viewMode === 'playground') && (
-          <MarkdownViewer 
-            html={html}
-            fileName={fileName}
-            theme={theme}
-            setTheme={setTheme}
-            isFullscreen={isFullscreen}
-            toggleFullscreen={toggleFullscreen}
-            columnWidth={columnWidth}
-            setColumnWidth={setColumnWidth}
-            onPrintPdf={handlePrintPdf}
-            onDirectPdfDownload={handleDirectPdfDownload}
-            onDropFile={handleOpenFile}
-            isPlayground={viewMode === 'playground'}
-            onTogglePlayground={() => setViewMode(viewMode === 'playground' ? 'preview' : 'playground')}
-            isExportingPdf={isExportingPdf}
-            onPlaygroundEditsChange={setHasPlaygroundEdits}
-          />
-        )}
-
-        {/* Table of Contents Drawer */}
-        {!isFullscreen && showToc && (
-          <TableOfContents 
-            toc={toc} 
-            onClose={() => setShowToc(false)} 
-          />
-        )}
-      </div>
+      {/* Document Tools Modal Hub */}
+      <ToolsModal 
+        isOpen={showToolsModal}
+        onClose={() => setShowToolsModal(false)}
+        activeTool={activeTool}
+        onSelectTool={(toolId) => {
+          setActiveTool(toolId);
+          setShowToolsModal(false);
+        }}
+        onOpenDocxFile={handleOpenDocxFile}
+        onOpenPptxFile={handleOpenPptxFile}
+        onOpenMarkdownFile={(file) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            setActiveTool('markdown');
+            handleOpenFile(file.name, event.target.result);
+          };
+          reader.readAsText(file);
+        }}
+        onLoadSampleWord={handleLoadSampleWord}
+        onLoadSamplePptx={handleLoadSamplePptx}
+      />
 
       {/* Global In-App Confirmation / Alert Modal */}
       <ConfirmModal 

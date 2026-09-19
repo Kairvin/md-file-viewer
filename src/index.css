@@ -1107,3 +1107,25 @@ del {
     break-after: avoid !important;
   }
 }
+
+/* -------------------------------------------------------------
+   POWERPOINT & WORD PRESENTATION / DOCUMENT STYLES
+---------------------------------------------------------------- */
+.pptx-slide-card {
+  box-sizing: border-box;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+@media print {
+  .pptx-slide-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    margin-bottom: 0 !important;
+  }
+}
+

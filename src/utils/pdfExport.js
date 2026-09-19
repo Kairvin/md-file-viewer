@@ -509,3 +509,84 @@ export function paginatePdfClone(container, pageHeight = 1093) {
   }
 }
 
+/**
+ * Exports PowerPoint slides to a multi-page presentation PDF
+ * with one slide cleanly rendered per page.
+ */
+export async function downloadPresentationPdf(element, filename = 'presentation.pdf') {
+  if (!element) return;
+
+  const safeName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+
+  const stagingWrapper = document.createElement('div');
+  stagingWrapper.id = 'pdf-presentation-staging-wrapper';
+  stagingWrapper.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: -9999px;
+    width: 900px;
+    background: #ffffff;
+    color: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    z-index: -9999;
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+    pointer-events: none;
+    opacity: 1;
+  `;
+
+  const clone = element.cloneNode(true);
+  clone.removeAttribute('contenteditable');
+  clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+
+  // Clean any zero-width spaces
+  const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+  let textNode;
+  while ((textNode = walker.nextNode())) {
+    if (textNode.nodeValue.includes('\u200B')) {
+      textNode.nodeValue = textNode.nodeValue.replace(/\u200B/g, '');
+    }
+  }
+
+  // Format slide cards for page breaks
+  const slides = clone.querySelectorAll('.pptx-slide-card');
+  slides.forEach((slide, idx) => {
+    slide.style.boxShadow = 'none';
+    slide.style.border = '1px solid #e2e8f0';
+    slide.style.borderRadius = '8px';
+    slide.style.marginBottom = '20px';
+    slide.style.pageBreakInside = 'avoid';
+    if (idx < slides.length - 1) {
+      slide.style.pageBreakAfter = 'always';
+    }
+  });
+
+  stagingWrapper.appendChild(clone);
+  document.body.appendChild(stagingWrapper);
+
+  const opt = {
+    margin: [10, 10, 10, 10],
+    filename: safeName,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff'
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+    pagebreak: { mode: ['css', 'legacy'] }
+  };
+
+  try {
+    await html2pdf().set(opt).from(stagingWrapper).save();
+  } catch (err) {
+    console.error('Presentation PDF generation failed:', err);
+  } finally {
+    if (stagingWrapper.parentNode) {
+      stagingWrapper.parentNode.removeChild(stagingWrapper);
+    }
+  }
+}
+
