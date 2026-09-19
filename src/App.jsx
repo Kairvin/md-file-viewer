@@ -8,13 +8,14 @@ import ConfirmModal from './components/ConfirmModal';
 import ToolsModal from './components/ToolsModal';
 import WordViewer from './components/WordViewer';
 import PptxViewer from './components/PptxViewer';
+import PdfViewer from './components/PdfViewer';
 import { parseMarkdown } from './utils/markdownParser';
 import { SAMPLE_MARKDOWN } from './utils/sampleDocument';
 import { parseDocxFile, SAMPLE_WORD_HTML } from './utils/docxParser';
 import { parsePptxFile, SAMPLE_PRESENTATION_SLIDES } from './utils/pptxParser';
 import { showInAppAlert } from './utils/alerts';
 import { printToPdf, downloadDirectPdf, downloadMarkdown, downloadHtml } from './utils/pdfExport';
-import { getStorageItem, setStorageItem, removeStorageItem } from './utils/storage';
+import { getStorageItem, setStorageItem, removeStorageItem, clearPlaygroundDraft } from './utils/storage';
 
 // Additional templates
 const TECH_TEMPLATE = `# Technical Architecture Document 📐
@@ -240,6 +241,29 @@ export default function App() {
     return {
       fileName: 'Sample-Architecture-Review.pptx',
       slides: SAMPLE_PRESENTATION_SLIDES
+    };
+  });
+
+  // PDF Viewer library state
+  const [pdfFiles, setPdfFiles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pdf_files_library');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  const [pdfData, setPdfData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pdf_active_doc');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      fileName: 'Document.pdf',
+      fileUrl: ''
     };
   });
 
@@ -813,6 +837,9 @@ export default function App() {
   const handleOpenPptxFile = useCallback(async (file) => {
     if (!file) return;
     try {
+      // Clear any prior draft for this presentation name so stale drafts never overwrite clean slides
+      await clearPlaygroundDraft('pptx_draft_' + file.name);
+
       const result = await parsePptxFile(file);
       if (result.success) {
         const deckId = 'pptx-' + Date.now();
@@ -847,6 +874,33 @@ export default function App() {
     }
   }, []);
 
+  // Open PDF (.pdf) file
+  const handleOpenPdfFile = useCallback(async (file) => {
+    if (!file) return;
+    try {
+      const fileUrl = URL.createObjectURL(file);
+      const pdfId = 'pdf-' + Date.now();
+      const newMeta = {
+        id: pdfId,
+        name: file.name,
+        format: 'pdf',
+        updatedAt: Date.now(),
+      };
+
+      setPdfFiles(prev => {
+        const next = [newMeta, ...prev.filter(f => f.name !== file.name)];
+        try { localStorage.setItem('pdf_files_library', JSON.stringify(next)); } catch {}
+        return next;
+      });
+
+      setPdfData({ fileName: file.name, fileUrl });
+      setActiveTool('pdf');
+      showInAppAlert(`Loaded PDF document "${file.name}".`, 'PDF Ready', 'info');
+    } catch (err) {
+      showInAppAlert(err.message || 'Error opening PDF file.', 'PDF File Error', 'danger');
+    }
+  }, []);
+
   // Load Sample PPTX Deck
   const handleLoadSamplePptx = useCallback(() => {
     setActiveTool('pptx');
@@ -858,7 +912,8 @@ export default function App() {
     setPptxData(sample);
     try { localStorage.setItem('pptx_active_deck', JSON.stringify(sample)); } catch {}
   }, []);
-  // Global file drag-and-drop router across formats (.md, .docx, .pptx)
+
+  // Global file drag-and-drop router across formats (.md, .docx, .pptx, .pdf)
   useEffect(() => {
     const handleDragOver = (e) => {
       e.preventDefault();
@@ -880,6 +935,8 @@ export default function App() {
         handleOpenDocxFile(file);
       } else if (lower.endsWith('.pptx')) {
         handleOpenPptxFile(file);
+      } else if (lower.endsWith('.pdf')) {
+        handleOpenPdfFile(file);
       } else if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.txt')) {
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -896,7 +953,7 @@ export default function App() {
       window.removeEventListener('dragover', handleDragOver);
       window.removeEventListener('drop', handleDrop);
     };
-  }, [handleOpenDocxFile, handleOpenPptxFile, handleOpenFile]);
+  }, [handleOpenDocxFile, handleOpenPptxFile, handleOpenPdfFile, handleOpenFile]);
 
   const handlePrintPdf = () => {
     printToPdf(fileName.replace(/\.md$/, ''));
@@ -951,6 +1008,11 @@ export default function App() {
             onDeletePptxFile={handleDeletePptxFile}
             onRenamePptxFile={handleRenamePptxFile}
 
+            pdfFiles={pdfFiles}
+            activePdfId={pdfData.fileName}
+            onOpenPdfFile={handleOpenPdfFile}
+            onDeletePdfFile={(id) => setPdfFiles(prev => prev.filter(f => f.id !== id))}
+
             activeTool={activeTool}
             onClose={() => setShowFileSidebar(false)}
             onOpenTools={() => setShowToolsModal(true)}
@@ -979,6 +1041,15 @@ export default function App() {
               onToggleSidebar={() => setShowFileSidebar(prev => !prev)}
               onOpenFile={handleOpenPptxFile}
               onLoadSamplePptx={handleLoadSamplePptx}
+              onOpenTools={() => setShowToolsModal(true)}
+            />
+          ) : activeTool === 'pdf' ? (
+            <PdfViewer 
+              fileUrl={pdfData.fileUrl}
+              fileName={pdfData.fileName}
+              showFileSidebar={showFileSidebar}
+              onToggleSidebar={() => setShowFileSidebar(prev => !prev)}
+              onOpenFile={handleOpenPdfFile}
               onOpenTools={() => setShowToolsModal(true)}
             />
           ) : (
@@ -1078,6 +1149,7 @@ export default function App() {
           };
           reader.readAsText(file);
         }}
+        onOpenPdfFile={handleOpenPdfFile}
         onLoadSampleWord={handleLoadSampleWord}
         onLoadSamplePptx={handleLoadSamplePptx}
       />

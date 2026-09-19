@@ -1,6 +1,100 @@
 import JSZip from 'jszip';
 
 /**
+ * Bulletproof text deduplication helper
+ * Detects and collapses duplicated strings like "SyllabusSyllabus" or "Phrase Phrase"
+ */
+export function deduplicateText(str) {
+  if (!str || typeof str !== 'string') return str;
+  const trimmed = str.trim();
+  if (trimmed.length < 4) return str;
+
+  // 1. Direct character-level repetition (2x, 3x, 4x)
+  for (let k = 2; k <= 4; k++) {
+    if (trimmed.length % k === 0) {
+      const chunkLen = trimmed.length / k;
+      const chunk = trimmed.slice(0, chunkLen);
+      if (chunk.repeat(k) === trimmed) {
+        return chunk;
+      }
+    }
+  }
+
+  // 2. Word-level repetition (e.g. "Basics of Cell Basics of Cell")
+  const words = trimmed.split(/\s+/);
+  for (let k = 2; k <= 4; k++) {
+    if (words.length >= k && words.length % k === 0) {
+      const chunkLen = words.length / k;
+      const chunk1 = words.slice(0, chunkLen).join(' ');
+      const chunk2 = words.slice(chunkLen, 2 * chunkLen).join(' ');
+      if (chunk1.toLowerCase() === chunk2.toLowerCase()) {
+        return words.slice(0, chunkLen).join(' ');
+      }
+    }
+  }
+
+  return str;
+}
+
+/**
+ * Deduplicates consecutive runs, repeated sequences of runs, and total concatenated runs
+ */
+export function deduplicateRuns(runs) {
+  if (!Array.isArray(runs) || runs.length === 0) return [];
+  let sanitized = [];
+  for (let i = 0; i < runs.length; i++) {
+    const r = runs[i];
+    if (!r) continue;
+    const cleanText = deduplicateText(r.text || '');
+    if (!cleanText && !r.isBreak) continue;
+
+    // Skip consecutive duplicate runs
+    if (sanitized.length > 0) {
+      const prev = sanitized[sanitized.length - 1];
+      const prevNorm = (prev.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const currNorm = cleanText.replace(/\s+/g, ' ').trim().toLowerCase();
+      if (prevNorm && currNorm && prevNorm === currNorm) {
+        continue;
+      }
+    }
+    sanitized.push({ ...r, text: cleanText });
+  }
+
+  // Check if the whole array of runs was duplicated [A, B, A, B]
+  if (sanitized.length >= 2 && sanitized.length % 2 === 0) {
+    const half = sanitized.length / 2;
+    const firstHalf = sanitized.slice(0, half).map(r => r.text).join('').trim();
+    const secondHalf = sanitized.slice(half).map(r => r.text).join('').trim();
+    if (firstHalf && firstHalf === secondHalf) {
+      sanitized = sanitized.slice(0, half);
+    }
+  }
+
+  // Check if the total concatenated text is duplicated across runs
+  const fullText = sanitized.map(r => r.text || '').join('');
+  const cleanFull = deduplicateText(fullText);
+  if (cleanFull && cleanFull.length < fullText.length) {
+    const truncated = [];
+    let remChars = cleanFull.length;
+    for (const r of sanitized) {
+      if (remChars <= 0) break;
+      const rLen = (r.text || '').length;
+      if (rLen <= remChars) {
+        truncated.push(r);
+        remChars -= rLen;
+      } else {
+        truncated.push({ ...r, text: r.text.slice(0, remChars) });
+        remChars = 0;
+        break;
+      }
+    }
+    return truncated;
+  }
+
+  return sanitized;
+}
+
+/**
  * Helper to resolve colors from OpenXML color elements
  */
 function extractColorFromElement(fillEl, themeColors = {}) {
@@ -384,20 +478,34 @@ export async function parsePptxFile(fileOrBuffer) {
         title = `Slide ${i + 1}`;
       }
 
+      // Bulletproof deduplication pass for each slide
+      const cleanTitle = deduplicateText(title);
+      const cleanSubtitle = deduplicateText(subtitle);
+      const cleanTitleRuns = deduplicateRuns(titleRuns);
+      const cleanSubtitleRuns = deduplicateRuns(subtitleRuns);
+      const cleanTextBlocks = textBlocks.map(block => ({
+        ...block,
+        rawText: deduplicateText(block.rawText),
+        paragraphs: block.paragraphs?.map(p => ({
+          ...p,
+          runs: deduplicateRuns(p.runs)
+        }))
+      }));
+
       slides.push({
         id: `slide-${i + 1}`,
         slideNumber: i + 1,
-        title,
-        titleRuns,
+        title: cleanTitle,
+        titleRuns: cleanTitleRuns,
         titleFontFamily,
         titleColor,
         titleAlign,
-        subtitle,
-        subtitleRuns,
+        subtitle: cleanSubtitle,
+        subtitleRuns: cleanSubtitleRuns,
         subtitleFontFamily,
         subtitleColor,
         subtitleAlign,
-        textBlocks,
+        textBlocks: cleanTextBlocks,
         tables,
         images,
       });

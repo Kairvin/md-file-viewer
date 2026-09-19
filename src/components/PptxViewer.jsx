@@ -37,6 +37,29 @@ import {
 } from './MarkdownViewer';
 import { downloadPresentationPdf, printToPdf } from '../utils/pdfExport';
 import { savePlaygroundDraft, getPlaygroundDraft, clearPlaygroundDraft } from '../utils/storage';
+import { deduplicateText, deduplicateRuns } from '../utils/pptxParser';
+
+/**
+ * Ensures any slide object (even from older cached drafts) has zero text duplication
+ */
+function sanitizeSlide(slide) {
+  if (!slide) return slide;
+  return {
+    ...slide,
+    title: deduplicateText(slide.title),
+    subtitle: deduplicateText(slide.subtitle),
+    titleRuns: deduplicateRuns(slide.titleRuns),
+    subtitleRuns: deduplicateRuns(slide.subtitleRuns),
+    textBlocks: slide.textBlocks?.map(block => ({
+      ...block,
+      rawText: deduplicateText(block.rawText),
+      paragraphs: block.paragraphs?.map(p => ({
+        ...p,
+        runs: deduplicateRuns(p.runs)
+      }))
+    }))
+  };
+}
 
 export default function PptxViewer({
   slides: initialSlides = [],
@@ -48,7 +71,7 @@ export default function PptxViewer({
   onLoadSamplePptx,
   onOpenTools
 }) {
-  const [slides, setSlides] = useState(initialSlides);
+  const [slides, setSlides] = useState(() => (Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : []));
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [displayMode, setDisplayMode] = useState('deck'); // 'deck' | 'flow'
   const [isPlayground, setIsPlayground] = useState(true);
@@ -97,14 +120,14 @@ export default function PptxViewer({
           if (savedDraft) {
             const parsed = typeof savedDraft === 'string' ? JSON.parse(savedDraft) : savedDraft;
             if (Array.isArray(parsed) && parsed.length > 0) {
-              setSlides(parsed);
+              setSlides(parsed.map(sanitizeSlide));
               return;
             }
           }
-          setSlides(initialSlides);
+          setSlides(Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : []);
         }
       } catch {
-        if (isMounted) setSlides(initialSlides);
+        if (isMounted) setSlides(Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : []);
       }
     })();
     return () => { isMounted = false; };
@@ -261,7 +284,7 @@ export default function PptxViewer({
   const handleResetDocument = async () => {
     try {
       await clearPlaygroundDraft(draftKey);
-      setSlides(initialSlides);
+      setSlides(Array.isArray(initialSlides) ? initialSlides.map(sanitizeSlide) : []);
       setHasEdits(false);
       setShowResetModal(false);
       historyStackRef.current = [];
@@ -547,7 +570,7 @@ export default function PptxViewer({
               }}
             >
               {slide.titleRuns && slide.titleRuns.length > 0 ? (
-                slide.titleRuns.map((r, i) => (
+                deduplicateRuns(slide.titleRuns).map((r, i) => (
                   <span 
                     key={`tr-${i}`} 
                     className={`${r.bold ? 'font-bold' : ''} ${r.italic ? 'italic' : ''} ${r.underline ? 'underline' : ''} ${r.strike ? 'line-through' : ''}`}
@@ -557,11 +580,11 @@ export default function PptxViewer({
                       fontSize: r.fontSize 
                     }}
                   >
-                    {r.text}
+                    {deduplicateText(r.text)}
                   </span>
                 ))
               ) : (
-                slide.title
+                deduplicateText(slide.title)
               )}
             </h2>
             {slide.subtitle && (
@@ -577,7 +600,7 @@ export default function PptxViewer({
                 }}
               >
                 {slide.subtitleRuns && slide.subtitleRuns.length > 0 ? (
-                  slide.subtitleRuns.map((r, i) => (
+                  deduplicateRuns(slide.subtitleRuns).map((r, i) => (
                     <span 
                       key={`sr-${i}`} 
                       className={`${r.bold ? 'font-bold' : ''} ${r.italic ? 'italic' : ''} ${r.underline ? 'underline' : ''} ${r.strike ? 'line-through' : ''}`}
@@ -587,11 +610,11 @@ export default function PptxViewer({
                         fontSize: r.fontSize 
                       }}
                     >
-                      {r.text}
+                      {deduplicateText(r.text)}
                     </span>
                   ))
                 ) : (
-                  slide.subtitle
+                  deduplicateText(slide.subtitle)
                 )}
               </p>
             )}
@@ -611,6 +634,7 @@ export default function PptxViewer({
               {block.paragraphs?.map((para, pIdx) => {
                 const indentClass = para.level === 1 ? 'ml-6' : para.level >= 2 ? 'ml-12' : '';
                 const alignStyle = para.align ? { textAlign: para.align } : {};
+                const sanitizedRuns = deduplicateRuns(para.runs);
                 return (
                   <div key={`p-${pIdx}`} className={`flex items-start gap-2.5 ${indentClass}`} style={alignStyle}>
                     {para.hasBullet !== false && (
@@ -635,7 +659,7 @@ export default function PptxViewer({
                       className="flex-1 text-sm sm:text-base leading-relaxed text-slate-700 dark:text-slate-200 outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 rounded px-1 transition-colors"
                       style={alignStyle}
                     >
-                      {para.runs?.map((run, rIdx) => (
+                      {sanitizedRuns?.map((run, rIdx) => (
                         <span 
                           key={`run-${rIdx}`}
                           className={`${run.bold ? 'font-bold' : 'font-normal'} ${run.italic ? 'italic' : ''} ${run.underline ? 'underline' : ''} ${run.strike ? 'line-through' : ''}`}
@@ -645,7 +669,7 @@ export default function PptxViewer({
                             fontSize: run.fontSize
                           }}
                         >
-                          {run.text}
+                          {deduplicateText(run.text)}
                         </span>
                       ))}
                     </div>
@@ -913,7 +937,7 @@ export default function PptxViewer({
                   }`}
                 >
                   <span className="text-[10px] font-bold text-slate-900 dark:text-white truncate block">
-                    {s.title || `Slide ${idx + 1}`}
+                    {deduplicateText(s.title) || `Slide ${idx + 1}`}
                   </span>
                   <span className="text-[9px] font-semibold text-slate-400">
                     #{idx + 1}

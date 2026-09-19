@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { 
   X, 
   Check, 
@@ -23,6 +23,7 @@ export default function ToolsModal({
   onOpenDocxFile,
   onOpenPptxFile,
   onOpenMarkdownFile,
+  onOpenPdfFile,
   onLoadSampleWord,
   onLoadSamplePptx
 }) {
@@ -30,6 +31,19 @@ export default function ToolsModal({
   const docxInputRef = useRef(null);
   const pptxInputRef = useRef(null);
   const mdInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -103,6 +117,15 @@ export default function ToolsModal({
             <span className="hidden sm:inline-block px-3.5 py-1.5 rounded-full bg-white/80 border border-[#E6DECB] font-medium shadow-2xs">
               Apps
             </span>
+
+            <button 
+              onClick={() => pdfInputRef.current?.click()}
+              className="px-3.5 py-1.5 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-700 border border-red-200 font-semibold shadow-2xs flex items-center gap-1.5 transition-colors"
+              title="Open PDF Document"
+            >
+              <FileText className="w-3.5 h-3.5 text-red-600" />
+              <span className="font-semibold text-[11px]">Open PDF</span>
+            </button>
 
             <button 
               onClick={() => onSelectTool('markdown')}
@@ -184,6 +207,13 @@ export default function ToolsModal({
           accept=".md,.markdown,.txt" 
           className="hidden" 
           onChange={(e) => handleFileChange(e, onOpenMarkdownFile)} 
+        />
+        <input 
+          type="file" 
+          ref={pdfInputRef} 
+          accept=".pdf" 
+          className="hidden" 
+          onChange={(e) => handleFileChange(e, onOpenPdfFile)} 
         />
 
         {/* 3 Pricing-Style Tool Cards */}
@@ -565,11 +595,45 @@ export default function ToolsModal({
 
         </div>
 
+        {/* Dedicated PDF Document Hub Banner */}
+        <div className="relative z-10 px-6 sm:px-10 pb-7">
+          <div className="rounded-[1.75rem] p-4 sm:p-5 bg-white/70 border border-[#E6DECB] flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-red-600 via-rose-500 to-amber-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm sm:text-base font-bold text-[#232528]">
+                    PDF Document Viewer & Vector Export
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20 uppercase font-mono">
+                    .pdf
+                  </span>
+                </div>
+                <p className="text-xs text-[#796C5E] mt-0.5">
+                  Inspect and review any PDF document with high-fidelity vector rendering, direct page navigation, and printing.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0 w-full sm:w-auto">
+              <button
+                onClick={() => pdfInputRef.current?.click()}
+                className="w-full sm:w-auto py-2.5 px-5 rounded-full bg-[#232528] hover:bg-black text-white font-bold text-xs shadow-xs transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Open PDF (.pdf) File</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Subtle Footer Note */}
         <div className="relative z-10 px-8 py-3.5 bg-[#F2ECE0]/60 border-t border-[#EAE3D2] flex flex-wrap items-center justify-between gap-3 text-[11px] text-[#6B5E4E]">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-[#528A2C]" />
-            <span>100% Client-Side Engine · IndexedDB Persistence · Zero Cloud Uploads</span>
+            <span>100% Client-Side Engine · IndexedDB Persistence · Markdown, Word, PowerPoint & PDF · Zero Cloud Uploads</span>
           </div>
           <div className="flex items-center gap-2 text-[#857766]">
             <span>Press <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#DDD5C0] font-mono text-[10px]">Esc</kbd> to close</span>
