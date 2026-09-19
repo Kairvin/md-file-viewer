@@ -12,7 +12,9 @@ import {
   Sparkles, 
   Wrench,
   Clock,
-  BookOpen
+  BookOpen,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import PlaygroundToolbar from './PlaygroundToolbar';
 import FloatingAnnotationBar from './FloatingAnnotationBar';
@@ -34,6 +36,8 @@ export default function WordViewer({
   html,
   fileName = 'Document.docx',
   theme = 'modern',
+  showFileSidebar = false,
+  onToggleSidebar,
   onOpenFile,
   onLoadSampleWord,
   onOpenTools
@@ -536,6 +540,24 @@ export default function WordViewer({
       {/* Top Word Action Toolbar */}
       <div className="h-12 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md px-4 flex items-center justify-between z-20 shrink-0">
         <div className="flex items-center gap-3">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className={`p-2 rounded-xl transition-all flex items-center justify-center border ${
+                showFileSidebar
+                  ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
+              }`}
+              title="Toggle File Sidebar (Cmd + B)"
+            >
+              {showFileSidebar ? (
+                <PanelLeftClose className="w-4 h-4" />
+              ) : (
+                <PanelLeftOpen className="w-4 h-4" />
+              )}
+            </button>
+          )}
+
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 text-white flex items-center justify-center font-bold text-xs shadow-md shadow-indigo-500/20 ring-1 ring-white/20 shrink-0">
               <FileText className="w-4 h-4" />

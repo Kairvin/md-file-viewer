@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Files, 
   FileText, 
+  FileCode,
+  Presentation,
   Plus, 
   Search, 
   Trash2, 
@@ -11,13 +13,45 @@ import {
   Download, 
   FolderOpen, 
   PanelLeftClose,
-  FilePlus,
-  Sparkles
+  Sparkles,
+  ChevronDown,
+  ChevronRight,
+  Upload,
+  Wrench
 } from 'lucide-react';
 import { downloadMarkdown } from '../utils/pdfExport';
 import { showInAppAlert } from '../utils/alerts';
 
 export default function FileSidebar({
+  // Markdown documents
+  markdownFiles = [],
+  activeMarkdownId,
+  onSelectMarkdownFile,
+  onNewMarkdownFile,
+  onRenameMarkdownFile,
+  onDeleteMarkdownFile,
+  onImportMarkdownFile,
+
+  // Word documents
+  wordFiles = [],
+  activeWordId,
+  onSelectWordFile,
+  onImportWordFile,
+  onDeleteWordFile,
+  onRenameWordFile,
+
+  // PowerPoint presentations
+  pptxFiles = [],
+  activePptxId,
+  onSelectPptxFile,
+  onImportPptxFile,
+  onDeletePptxFile,
+  onRenamePptxFile,
+
+  // Current active tool
+  activeTool = 'markdown', // 'markdown' | 'word' | 'pptx'
+
+  // Backward compatibility fallback props
   files = [],
   activeFileId,
   onSelectFile,
@@ -25,19 +59,45 @@ export default function FileSidebar({
   onRenameFile,
   onDeleteFile,
   onImportFile,
-  onClose
+
+  // General controls
+  onClose,
+  onOpenTools
 }) {
+  // Normalize markdown files if using legacy props
+  const resolvedMdFiles = markdownFiles.length > 0 ? markdownFiles : files;
+  const resolvedActiveMdId = activeMarkdownId || activeFileId;
+  const resolvedSelectMd = onSelectMarkdownFile || onSelectFile;
+  const resolvedNewMd = onNewMarkdownFile || onNewFile;
+  const resolvedRenameMd = onRenameMarkdownFile || onRenameFile;
+  const resolvedDeleteMd = onDeleteMarkdownFile || onDeleteFile;
+  const resolvedImportMd = onImportMarkdownFile || onImportFile;
+
+  // Active category filter tab: 'all' | 'markdown' | 'word' | 'pptx'
+  const [activeCategory, setActiveCategory] = useState('all');
   const [filter, setFilter] = useState('');
-  const [editingId, setEditingId] = useState(null);
+  const [collapsedSections, setCollapsedSections] = useState({
+    markdown: false,
+    word: false,
+    pptx: false
+  });
+
+  // Inline rename state: { category: 'markdown'|'word'|'pptx', id: string }
+  const [editingItem, setEditingItem] = useState(null);
   const [editName, setEditName] = useState('');
   const editInputRef = useRef(null);
-  const fileInputRef = useRef(null);
+
+  // Hidden file input refs
+  const mdInputRef = useRef(null);
+  const docxInputRef = useRef(null);
+  const pptxInputRef = useRef(null);
+  const anyInputRef = useRef(null);
 
   // Close on Escape on mobile
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && window.innerWidth < 1024) {
-        onClose();
+        onClose?.();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -46,60 +106,75 @@ export default function FileSidebar({
 
   // Focus rename input when editing starts
   useEffect(() => {
-    if (editingId && editInputRef.current) {
+    if (editingItem && editInputRef.current) {
       editInputRef.current.focus();
       editInputRef.current.select();
     }
-  }, [editingId]);
+  }, [editingItem]);
 
-  const filteredFiles = files.filter(f => 
-    f.name.toLowerCase().includes(filter.toLowerCase())
-  );
+  const totalFiles = resolvedMdFiles.length + wordFiles.length + pptxFiles.length;
 
-  const startRename = (e, file) => {
+  const toggleSection = (section) => {
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const startRename = (e, category, id, currentName) => {
     e.stopPropagation();
-    setEditingId(file.id);
-    setEditName(file.name.replace(/\.md$/, ''));
+    setEditingItem({ category, id });
+    setEditName(currentName.replace(/\.(md|markdown|docx|pptx)$/i, ''));
   };
 
-  const submitRename = (fileId) => {
-    if (editName.trim()) {
-      onRenameFile(fileId, editName.trim());
-    } else {
+  const submitRename = () => {
+    if (!editingItem) return;
+    const cleanName = editName.trim();
+    if (!cleanName) {
       showInAppAlert('Document name cannot be empty. Please enter a valid name.', 'Invalid Name', 'warning');
+      setEditingItem(null);
+      return;
     }
-    setEditingId(null);
+
+    if (editingItem.category === 'markdown') {
+      resolvedRenameMd?.(editingItem.id, `${cleanName}.md`);
+    } else if (editingItem.category === 'word') {
+      onRenameWordFile?.(editingItem.id, `${cleanName}.docx`);
+    } else if (editingItem.category === 'pptx') {
+      onRenamePptxFile?.(editingItem.id, `${cleanName}.pptx`);
+    }
+
+    setEditingItem(null);
   };
 
-  const handleKeyDownRename = (e, fileId) => {
+  const handleKeyDownRename = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      submitRename(fileId);
+      submitRename();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      setEditingId(null);
+      setEditingItem(null);
     }
   };
 
-  const handleFileImport = (e) => {
+  const handleUniversalImport = (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const isText = file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt') || (file.type && file.type.startsWith('text/'));
-      if (!isText) {
-        showInAppAlert(`The file "${file.name}" is not a supported Markdown or text document. Please import a .md, .markdown, or .txt file.`, 'Unsupported File', 'warning');
-        e.target.value = '';
-        return;
-      }
+    if (!file) return;
+
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith('.docx')) {
+      onImportWordFile?.(file);
+    } else if (lower.endsWith('.pptx')) {
+      onImportPptxFile?.(file);
+    } else if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.txt')) {
       const reader = new FileReader();
       reader.onload = (event) => {
-        onImportFile(file.name, event.target.result);
+        resolvedImportMd?.(file.name, event.target.result);
       };
       reader.onerror = () => {
-        showInAppAlert(`Failed to read "${file.name}". Please ensure the file is accessible and try again.`, 'File Read Error', 'danger');
+        showInAppAlert(`Failed to read "${file.name}".`, 'File Read Error', 'danger');
       };
       reader.readAsText(file);
+    } else {
+      showInAppAlert(`The file "${file.name}" is not supported. Please choose a .md, .docx, or .pptx file.`, 'Unsupported File', 'warning');
     }
-    // reset input
     e.target.value = '';
   };
 
@@ -117,6 +192,12 @@ export default function FileSidebar({
     return new Date(timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  // Filter lists by search query
+  const query = filter.toLowerCase().trim();
+  const filteredMd = resolvedMdFiles.filter(f => !query || f.name.toLowerCase().includes(query));
+  const filteredWord = wordFiles.filter(f => !query || f.name.toLowerCase().includes(query));
+  const filteredPptx = pptxFiles.filter(f => !query || f.name.toLowerCase().includes(query));
+
   return (
     <>
       {/* Mobile Backdrop Overlay */}
@@ -126,194 +207,578 @@ export default function FileSidebar({
         aria-hidden="true"
       />
 
-      {/* Sidebar: Slide-in on mobile, Left pane on desktop */}
+      {/* Sidebar Container */}
       <aside 
         id="file-sidebar"
-        className="fixed lg:static top-0 bottom-0 left-0 z-50 w-72 max-w-[85vw] lg:w-64 xl:w-72 shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/95 flex flex-col h-full shadow-2xl lg:shadow-none transition-all duration-200 select-none animate-in slide-in-from-left-full lg:animate-none"
+        className="fixed lg:static top-0 bottom-0 left-0 z-50 w-72 max-w-[85vw] lg:w-64 xl:w-72 shrink-0 border-r border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl flex flex-col h-full shadow-2xl lg:shadow-none transition-all duration-200 select-none animate-in slide-in-from-left-full lg:animate-none"
       >
-        {/* Hidden File Input for Importing */}
+        {/* Hidden inputs */}
         <input 
           type="file" 
-          ref={fileInputRef} 
-          onChange={handleFileImport} 
-          accept=".md,.markdown,.txt" 
+          ref={anyInputRef} 
+          onChange={handleUniversalImport} 
+          accept=".md,.markdown,.txt,.docx,.pptx" 
+          className="hidden" 
+        />
+        <input 
+          type="file" 
+          ref={docxInputRef} 
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onImportWordFile?.(f);
+            e.target.value = '';
+          }} 
+          accept=".docx" 
+          className="hidden" 
+        />
+        <input 
+          type="file" 
+          ref={pptxInputRef} 
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onImportPptxFile?.(f);
+            e.target.value = '';
+          }} 
+          accept=".pptx" 
           className="hidden" 
         />
 
-        {/* Header */}
-        <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-            <Files className="w-4 h-4 text-blue-500" />
-            <span>Documents</span>
-            <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
-              {files.length}
+        {/* Sidebar Header */}
+        <div className="p-3.5 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/20">
+              <Files className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-bold text-xs tracking-tight text-slate-900 dark:text-white">Workspace Files</span>
+            <span className="font-mono text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
+              {totalFiles}
             </span>
           </div>
 
           <button 
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             title="Collapse Sidebar (Cmd + B)"
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Primary CTA: New .md File */}
-        <div className="p-3 border-b border-slate-100 dark:border-slate-800/80">
-          <button
-            onClick={() => {
-              onNewFile();
-              if (window.innerWidth < 1024) onClose();
-            }}
-            className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-xs active:scale-[0.98]"
-            title="Create a new Markdown file"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New .md File</span>
-          </button>
+        {/* Category Filter Tabs */}
+        <div className="px-3 pt-3 pb-1 border-b border-slate-100 dark:border-slate-800/60">
+          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
+            <button
+              data-testid="category-tab-all"
+              onClick={() => setActiveCategory('all')}
+              className={`py-1 text-[11px] font-bold rounded-lg transition-all text-center ${
+                activeCategory === 'all'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              All ({totalFiles})
+            </button>
+            <button
+              data-testid="category-tab-markdown"
+              onClick={() => setActiveCategory('markdown')}
+              className={`py-1 text-[11px] font-bold rounded-lg transition-all text-center flex items-center justify-center gap-1 ${
+                activeCategory === 'markdown'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+              title="Markdown Files"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              .md
+            </button>
+            <button
+              data-testid="category-tab-word"
+              onClick={() => setActiveCategory('word')}
+              className={`py-1 text-[11px] font-bold rounded-lg transition-all text-center flex items-center justify-center gap-1 ${
+                activeCategory === 'word'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+              title="Word Documents"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+              .docx
+            </button>
+            <button
+              data-testid="category-tab-pptx"
+              onClick={() => setActiveCategory('pptx')}
+              className={`py-1 text-[11px] font-bold rounded-lg transition-all text-center flex items-center justify-center gap-1 ${
+                activeCategory === 'pptx'
+                  ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+              title="PowerPoint Presentations"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              .pptx
+            </button>
+          </div>
         </div>
 
-        {/* Search / Filter (shown if > 3 files) */}
-        {files.length > 3 && (
-          <div className="px-3 pt-2.5 pb-1">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input 
-                type="text" 
-                placeholder="Search documents..." 
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 rounded-lg outline-none border border-transparent focus:border-slate-400 dark:focus:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 transition-colors"
-              />
-            </div>
+        {/* Search Input */}
+        <div className="px-3 pt-2.5 pb-1">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Search across formats..." 
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 rounded-xl outline-none border border-transparent focus:border-slate-300 dark:focus:border-slate-600 text-slate-900 dark:text-white placeholder-slate-400 transition-colors"
+            />
+            {filter && (
+              <button 
+                onClick={() => setFilter('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* File List */}
-        <div className="flex-1 overflow-y-auto p-2.5 space-y-1">
-          {filteredFiles.length === 0 ? (
-            <div className="text-center py-8 text-xs text-slate-400">
-              No matching files found.
-            </div>
-          ) : (
-            filteredFiles.map((file) => {
-              const isActive = file.id === activeFileId;
-              const isEditing = file.id === editingId;
-
-              return (
-                <div
-                  key={file.id}
-                  onClick={() => {
-                    if (!isEditing) {
-                      onSelectFile(file.id);
-                      if (window.innerWidth < 1024) onClose();
-                    }
-                  }}
-                  className={`group relative flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all ${
-                    isActive
-                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium border border-slate-300/80 dark:border-slate-700 shadow-2xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
-                  }`}
+        {/* Categorized Document Lists */}
+        <div className="flex-1 overflow-y-auto p-2.5 space-y-4 custom-scrollbar">
+          
+          {/* SECTION 1: MARKDOWN FILES */}
+          {(activeCategory === 'all' || activeCategory === 'markdown') && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                <button 
+                  onClick={() => toggleSection('markdown')}
+                  className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
                 >
-                  {/* Left: Icon & File Meta */}
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
-                    <FileText className={`w-4 h-4 shrink-0 transition-colors ${
-                      isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
-                    }`} />
+                  {collapsedSections.markdown ? (
+                    <ChevronRight className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-extrabold">
+                    <FileCode className="w-3.5 h-3.5" />
+                    Markdown
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400 font-normal">
+                    ({filteredMd.length})
+                  </span>
+                </button>
 
-                    <div className="min-w-0 flex-1">
-                      {isEditing ? (
-                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                          <input 
-                            ref={editInputRef}
-                            type="text"
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            onKeyDown={(e) => handleKeyDownRename(e, file.id)}
-                            className="w-full text-xs bg-white dark:bg-slate-900 border border-blue-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
-                          />
-                          <button
-                            onClick={() => submitRename(file.id)}
-                            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
-                            title="Save Name (Enter)"
-                          >
-                            <Check className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="text-xs truncate font-medium">
-                            {file.name}
-                          </div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-1.5 mt-0.5">
-                            <span>{formatWordCount(file.content)}</span>
-                            <span>·</span>
-                            <span>{formatRelativeTime(file.updatedAt)}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                <button
+                  onClick={() => {
+                    resolvedNewMd?.();
+                    if (window.innerWidth < 1024) onClose?.();
+                  }}
+                  className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition-colors"
+                  title="New .md Document"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
 
-                  {/* Right: Hover Actions */}
-                  {!isEditing && (
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {/* Rename */}
-                      <button
-                        onClick={(e) => startRename(e, file)}
-                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded"
-                        title="Rename file"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
+              {!collapsedSections.markdown && (
+                <div className="space-y-0.5">
+                  {filteredMd.length === 0 ? (
+                    <div className="px-3 py-2 text-[11px] text-slate-400 italic">No markdown files</div>
+                  ) : (
+                    filteredMd.map((file) => {
+                      const isActive = activeTool === 'markdown' && file.id === resolvedActiveMdId;
+                      const isEditing = editingItem?.category === 'markdown' && editingItem?.id === file.id;
 
-                      {/* Download */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          downloadMarkdown(file.content, file.name);
-                        }}
-                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded"
-                        title="Download .md file"
-                      >
-                        <Download className="w-3 h-3" />
-                      </button>
-
-                      {/* Delete */}
-                      {files.length > 1 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteFile(file.id);
+                      return (
+                        <div
+                          key={file.id}
+                          role="button"
+                          tabIndex={0}
+                          data-testid={`document-item-${file.id}`}
+                          data-doc-category="markdown"
+                          onClick={() => {
+                            if (!isEditing) {
+                              resolvedSelectMd?.(file.id);
+                              if (window.innerWidth < 1024) onClose?.();
+                            }
                           }}
-                          className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded"
-                          title="Delete file"
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
+                              e.preventDefault();
+                              resolvedSelectMd?.(file.id);
+                              if (window.innerWidth < 1024) onClose?.();
+                            }
+                          }}
+                          className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                            isActive
+                              ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-100 font-medium border border-blue-200 dark:border-blue-800 shadow-2xs ring-1 ring-blue-500/20'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+                          }`}
                         >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
+                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+                            <FileCode className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-blue-500/70'}`} />
+                            <div className="min-w-0 flex-1">
+                              {isEditing ? (
+                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <input 
+                                    ref={editInputRef}
+                                    type="text"
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    onKeyDown={handleKeyDownRename}
+                                    className="w-full text-xs bg-white dark:bg-slate-900 border border-blue-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                                  />
+                                  <button
+                                    onClick={submitRename}
+                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-xs truncate font-medium">{file.name}</div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                                    <span>{formatWordCount(file.content)}</span>
+                                    <span>·</span>
+                                    <span>{formatRelativeTime(file.updatedAt)}</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {!isEditing && (
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => startRename(e, 'markdown', file.id, file.name)}
+                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+                                title="Rename"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadMarkdown(file.content, file.name);
+                                }}
+                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+                                title="Download"
+                              >
+                                <Download className="w-3 h-3" />
+                              </button>
+                              {resolvedMdFiles.length > 1 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    resolvedDeleteMd?.(file.id);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
-              );
-            })
+              )}
+            </div>
           )}
+
+          {/* SECTION 2: WORD DOCUMENTS */}
+          {(activeCategory === 'all' || activeCategory === 'word') && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                <button 
+                  onClick={() => toggleSection('word')}
+                  className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                >
+                  {collapsedSections.word ? (
+                    <ChevronRight className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                  <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-extrabold">
+                    <FileText className="w-3.5 h-3.5" />
+                    Word Docs
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400 font-normal">
+                    ({filteredWord.length})
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => docxInputRef.current?.click()}
+                  className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded transition-colors"
+                  title="Import .docx File"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {!collapsedSections.word && (
+                <div className="space-y-0.5">
+                  {filteredWord.length === 0 ? (
+                    <div className="px-3 py-2 text-[11px] text-slate-400 italic">No Word documents</div>
+                  ) : (
+                    filteredWord.map((doc) => {
+                      const isActive = activeTool === 'word' && doc.id === activeWordId;
+                      const isEditing = editingItem?.category === 'word' && editingItem?.id === doc.id;
+
+                      return (
+                        <div
+                          key={doc.id}
+                          role="button"
+                          tabIndex={0}
+                          data-testid={`document-item-${doc.id}`}
+                          data-doc-category="word"
+                          onClick={() => {
+                            if (!isEditing) {
+                              onSelectWordFile?.(doc.id);
+                              if (window.innerWidth < 1024) onClose?.();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
+                              e.preventDefault();
+                              onSelectWordFile?.(doc.id);
+                              if (window.innerWidth < 1024) onClose?.();
+                            }
+                          }}
+                          className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                            isActive
+                              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-100 font-medium border border-indigo-200 dark:border-indigo-800 shadow-2xs ring-1 ring-indigo-500/20'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+                            <FileText className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-500/70'}`} />
+                            <div className="min-w-0 flex-1">
+                              {isEditing ? (
+                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <input 
+                                    ref={editInputRef}
+                                    type="text"
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    onKeyDown={handleKeyDownRename}
+                                    className="w-full text-xs bg-white dark:bg-slate-900 border border-indigo-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                                  />
+                                  <button
+                                    onClick={submitRename}
+                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-xs truncate font-medium">{doc.name}</div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                                    <span>.docx</span>
+                                    <span>·</span>
+                                    <span>{formatRelativeTime(doc.updatedAt)}</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {!isEditing && (
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => startRename(e, 'word', doc.id, doc.name)}
+                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+                                title="Rename"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              {wordFiles.length > 1 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteWordFile?.(doc.id);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SECTION 3: POWERPOINT PRESENTATIONS */}
+          {(activeCategory === 'all' || activeCategory === 'pptx') && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                <button 
+                  onClick={() => toggleSection('pptx')}
+                  className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                >
+                  {collapsedSections.pptx ? (
+                    <ChevronRight className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-extrabold">
+                    <Presentation className="w-3.5 h-3.5" />
+                    PowerPoint Decks
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400 font-normal">
+                    ({filteredPptx.length})
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => pptxInputRef.current?.click()}
+                  className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded transition-colors"
+                  title="Import .pptx File"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {!collapsedSections.pptx && (
+                <div className="space-y-0.5">
+                  {filteredPptx.length === 0 ? (
+                    <div className="px-3 py-2 text-[11px] text-slate-400 italic">No PowerPoint decks</div>
+                  ) : (
+                    filteredPptx.map((deck) => {
+                      const isActive = activeTool === 'pptx' && deck.id === activePptxId;
+                      const isEditing = editingItem?.category === 'pptx' && editingItem?.id === deck.id;
+
+                      return (
+                        <div
+                          key={deck.id}
+                          role="button"
+                          tabIndex={0}
+                          data-testid={`document-item-${deck.id}`}
+                          data-doc-category="pptx"
+                          onClick={() => {
+                            if (!isEditing) {
+                              onSelectPptxFile?.(deck.id);
+                              if (window.innerWidth < 1024) onClose?.();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
+                              e.preventDefault();
+                              onSelectPptxFile?.(deck.id);
+                              if (window.innerWidth < 1024) onClose?.();
+                            }
+                          }}
+                          className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                            isActive
+                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 font-medium border border-amber-200 dark:border-amber-800 shadow-2xs ring-1 ring-amber-500/20'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+                            <Presentation className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500/70'}`} />
+                            <div className="min-w-0 flex-1">
+                              {isEditing ? (
+                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <input 
+                                    ref={editInputRef}
+                                    type="text"
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    onKeyDown={handleKeyDownRename}
+                                    className="w-full text-xs bg-white dark:bg-slate-900 border border-amber-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                                  />
+                                  <button
+                                    onClick={submitRename}
+                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-xs truncate font-medium">{deck.name}</div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                                    <span>{deck.slideCount || '?'} Slides</span>
+                                    <span>·</span>
+                                    <span>{formatRelativeTime(deck.updatedAt)}</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {!isEditing && (
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => startRename(e, 'pptx', deck.id, deck.name)}
+                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+                                title="Rename"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              {pptxFiles.length > 1 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeletePptxFile?.(deck.id);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
 
-        {/* Footer: Import & Local Storage status */}
-        <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 flex flex-col gap-2">
+        {/* Sidebar Footer */}
+        <div className="p-3 border-t border-slate-200/80 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60 flex flex-col gap-2">
           <button
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/80 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-            title="Import a markdown file from your computer"
+            onClick={() => anyInputRef.current?.click()}
+            className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700/80 text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-2xs active:scale-[0.98]"
+            title="Import any file (.md, .docx, .pptx) from your computer"
           >
             <FolderOpen className="w-3.5 h-3.5 text-blue-500" />
             <span>Open from Computer</span>
           </button>
 
-          <div className="text-[10px] text-center text-slate-400 dark:text-slate-500">
-            Auto-saved locally in browser
+          {onOpenTools && (
+            <button
+              onClick={() => {
+                onOpenTools();
+                if (window.innerWidth < 1024) onClose?.();
+              }}
+              className="w-full py-1.5 px-3 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Wrench className="w-3 h-3" />
+              <span>Tools Hub</span>
+            </button>
+          )}
+
+          <div className="text-[10px] text-center text-slate-400 dark:text-slate-500 font-medium">
+            100% Client-Side · IndexedDB Persistence
           </div>
         </div>
       </aside>

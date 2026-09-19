@@ -1,9 +1,109 @@
 import JSZip from 'jszip';
 
 /**
+ * Helper to resolve colors from OpenXML color elements
+ */
+function extractColorFromElement(fillEl, themeColors = {}) {
+  if (!fillEl) return undefined;
+  
+  // 1. Direct srgbClr (Hex)
+  const srgb = fillEl.querySelector('a\\:srgbClr, srgbClr');
+  if (srgb) {
+    const val = srgb.getAttribute('val');
+    if (val) return `#${val}`;
+  }
+
+  // 2. Theme schemeClr
+  const scheme = fillEl.querySelector('a\\:schemeClr, schemeClr');
+  if (scheme) {
+    const val = scheme.getAttribute('val');
+    if (val) {
+      if (themeColors[val]) return themeColors[val];
+      // Standard fallback mappings
+      if (val === 'tx1') return themeColors.dk1 || '#0f172a';
+      if (val === 'tx2') return themeColors.dk2 || '#334155';
+      if (val === 'bg1') return themeColors.lt1 || '#ffffff';
+      if (val === 'bg2') return themeColors.lt2 || '#f8fafc';
+      if (val.startsWith('accent')) return themeColors[val] || '#3b82f6';
+    }
+  }
+
+  // 3. System color sysClr
+  const sys = fillEl.querySelector('a\\:sysClr, sysClr');
+  if (sys) {
+    const lastClr = sys.getAttribute('lastClr');
+    if (lastClr) return `#${lastClr}`;
+  }
+
+  return undefined;
+}
+
+/**
+ * Parses theme1.xml to extract theme colors and font definitions
+ */
+async function parsePptxTheme(zip, parser) {
+  const theme = {
+    colors: {
+      dk1: '#000000',
+      lt1: '#ffffff',
+      dk2: '#1f497d',
+      lt2: '#eeece1',
+      accent1: '#4f81bd',
+      accent2: '#c0504d',
+      accent3: '#9bbb59',
+      accent4: '#8064a2',
+      accent5: '#4bacc6',
+      accent6: '#f79646',
+      hlink: '#0000ff',
+      folHlink: '#800080',
+    },
+    fonts: {
+      major: 'Plus Jakarta Sans, sans-serif',
+      minor: 'Plus Jakarta Sans, sans-serif',
+    }
+  };
+
+  try {
+    const themeStr = await zip.file('ppt/theme/theme1.xml')?.async('text');
+    if (!themeStr) return theme;
+
+    const themeDoc = parser.parseFromString(themeStr, 'application/xml');
+    
+    // Parse color scheme
+    const clrScheme = themeDoc.querySelector('a\\:clrScheme, clrScheme');
+    if (clrScheme) {
+      for (const child of Array.from(clrScheme.children)) {
+        const key = child.tagName.replace(/^.*:/, '');
+        const clr = extractColorFromElement(child, {});
+        if (clr) {
+          theme.colors[key] = clr;
+        }
+      }
+    }
+
+    // Parse font scheme
+    const majorFont = themeDoc.querySelector('a\\:majorFont a\\:latin, majorFont latin');
+    if (majorFont) {
+      const typeface = majorFont.getAttribute('typeface');
+      if (typeface) theme.fonts.major = typeface;
+    }
+
+    const minorFont = themeDoc.querySelector('a\\:minorFont a\\:latin, minorFont latin');
+    if (minorFont) {
+      const typeface = minorFont.getAttribute('typeface');
+      if (typeface) theme.fonts.minor = typeface;
+    }
+  } catch (e) {
+    console.warn('Could not parse ppt/theme/theme1.xml:', e);
+  }
+
+  return theme;
+}
+
+/**
  * Parses a PowerPoint (.pptx) file (Blob / ArrayBuffer) using JSZip and DOMParser.
  * Extracts structured slide objects with titles, body paragraphs, bullet points,
- * tables, embedded images, and speaker notes.
+ * tables, embedded images, and theme-resolved colors and fonts.
  */
 export async function parsePptxFile(fileOrBuffer) {
   try {
@@ -18,6 +118,9 @@ export async function parsePptxFile(fileOrBuffer) {
 
     const zip = await JSZip.loadAsync(arrayBuffer);
     const parser = new DOMParser();
+
+    // Parse presentation theme for color schemes and typography
+    const theme = await parsePptxTheme(zip, parser);
 
     // 1. Determine slide order from presentation.xml.rels or slide numbering
     const slideEntries = [];
@@ -64,7 +167,17 @@ export async function parsePptxFile(fileOrBuffer) {
       }
 
       let title = '';
+      let titleRuns = [];
+      let titleFontFamily = undefined;
+      let titleColor = undefined;
+      let titleAlign = undefined;
+
       let subtitle = '';
+      let subtitleRuns = [];
+      let subtitleFontFamily = undefined;
+      let subtitleColor = undefined;
+      let subtitleAlign = undefined;
+
       const textBlocks = [];
       const tables = [];
       const images = [];
@@ -83,26 +196,99 @@ export async function parsePptxFile(fileOrBuffer) {
         for (const pEl of pEls) {
           const pPr = pEl.querySelector('a\\:pPr, pPr');
           const level = parseInt(pPr?.getAttribute('lvl') || '0', 10);
+          
+          // Alignment
+          const algnAttr = pPr?.getAttribute('algn');
+          const align = algnAttr === 'ctr' ? 'center' : algnAttr === 'r' ? 'right' : algnAttr === 'just' ? 'justify' : 'left';
 
+          // Bullet detection
+          const hasBuNone = !!pPr?.querySelector('a\\:buNone, buNone');
+          const buCharEl = pPr?.querySelector('a\\:buChar, buChar');
+          const bulletChar = buCharEl?.getAttribute('char') || null;
+          const buAutoNum = !!pPr?.querySelector('a\\:buAutoNum, buAutoNum');
+          const buClrEl = pPr?.querySelector('a\\:buClr, buClr');
+          const bulletColor = extractColorFromElement(buClrEl, theme.colors);
+
+          // By default, body paragraphs have bullets unless buNone is present
+          let hasBullet = false;
+          if (!hasBuNone && phType !== 'title' && phType !== 'ctrTitle' && phType !== 'subTitle') {
+            if (bulletChar || buAutoNum || phType === 'body' || level > 0) {
+              hasBullet = true;
+            }
+          }
+
+          // Extract runs by iterating DIRECT CHILDREN of pEl (Prevents duplicate text matching)
           const runs = [];
-          const runEls = pEl.querySelectorAll('a\\:r, r, a\\:t, t');
+          for (const child of Array.from(pEl.children)) {
+            const tagName = child.tagName.toLowerCase().replace(/^.*:/, '');
 
-          for (const r of runEls) {
-            if (r.tagName.endsWith('t')) {
-              // Direct text tag
-              runs.push({ text: r.textContent || '', bold: false, italic: false });
-            } else if (r.tagName.endsWith('r')) {
-              const tEl = r.querySelector('a\\:t, t');
+            if (tagName === 'r') {
+              // Standard text run
+              const tEl = child.querySelector('a\\:t, t');
               if (!tEl) continue;
-              const rPr = r.querySelector('a\\:rPr, rPr');
-              const bold = rPr?.getAttribute('b') === '1';
-              const italic = rPr?.getAttribute('i') === '1';
-              runs.push({ text: tEl.textContent || '', bold, italic });
+              const text = tEl.textContent || '';
+              if (!text) continue;
+
+              const rPr = child.querySelector('a\\:rPr, rPr');
+              const bold = rPr?.getAttribute('b') === '1' || rPr?.getAttribute('b') === 'true';
+              const italic = rPr?.getAttribute('i') === '1' || rPr?.getAttribute('i') === 'true';
+              const underline = rPr?.getAttribute('u') === 'sng' || rPr?.getAttribute('u') === '1';
+              const strike = rPr?.getAttribute('strike') === 'sngStrike';
+
+              // Font size in pt
+              const szAttr = rPr?.getAttribute('sz');
+              const fontSize = szAttr ? `${Math.round(parseInt(szAttr, 10) / 100)}pt` : undefined;
+
+              // Typeface
+              let fontFamily = undefined;
+              const latinEl = rPr?.querySelector('a\\:latin, latin');
+              const eaEl = rPr?.querySelector('a\\:ea, ea');
+              const csEl = rPr?.querySelector('a\\:cs, cs');
+              const rawTypeface = latinEl?.getAttribute('typeface') || eaEl?.getAttribute('typeface') || csEl?.getAttribute('typeface');
+              if (rawTypeface) {
+                if (rawTypeface.startsWith('+mj')) fontFamily = theme.fonts.major;
+                else if (rawTypeface.startsWith('+mn')) fontFamily = theme.fonts.minor;
+                else fontFamily = rawTypeface;
+              }
+
+              // Color
+              const color = extractColorFromElement(rPr, theme.colors);
+
+              runs.push({
+                text,
+                bold,
+                italic,
+                underline,
+                strike,
+                fontSize,
+                fontFamily,
+                color,
+              });
+            } else if (tagName === 'fld') {
+              // Field tag (like slide number)
+              const tEl = child.querySelector('a\\:t, t');
+              if (tEl && tEl.textContent) {
+                runs.push({ text: tEl.textContent, bold: false, italic: false });
+              }
+            } else if (tagName === 'br') {
+              runs.push({ text: '\n', isBreak: true });
+            } else if (tagName === 't') {
+              // Rare direct <a:t> child
+              if (child.textContent) {
+                runs.push({ text: child.textContent, bold: false, italic: false });
+              }
             }
           }
 
           if (runs.length > 0) {
-            paragraphs.push({ level, runs });
+            paragraphs.push({
+              level,
+              align,
+              hasBullet,
+              bulletChar,
+              bulletColor,
+              runs
+            });
           }
         }
 
@@ -118,12 +304,20 @@ export async function parsePptxFile(fileOrBuffer) {
         if (phType === 'title' || phType === 'ctrTitle') {
           if (!title) {
             title = combinedText;
+            titleRuns = paragraphs[0]?.runs || [];
+            titleFontFamily = titleRuns[0]?.fontFamily;
+            titleColor = titleRuns[0]?.color;
+            titleAlign = paragraphs[0]?.align;
           } else {
             textBlocks.push({ type: 'header', paragraphs, rawText: combinedText });
           }
         } else if (phType === 'subTitle') {
           if (!subtitle) {
             subtitle = combinedText;
+            subtitleRuns = paragraphs[0]?.runs || [];
+            subtitleFontFamily = subtitleRuns[0]?.fontFamily;
+            subtitleColor = subtitleRuns[0]?.color;
+            subtitleAlign = paragraphs[0]?.align;
           } else {
             textBlocks.push({ type: 'body', paragraphs, rawText: combinedText });
           }
@@ -131,6 +325,10 @@ export async function parsePptxFile(fileOrBuffer) {
           // If no title was detected yet, the very first short prominent text might be the title
           if (!title && combinedText.length < 80 && !combinedText.includes('\n')) {
             title = combinedText;
+            titleRuns = paragraphs[0]?.runs || [];
+            titleFontFamily = titleRuns[0]?.fontFamily;
+            titleColor = titleRuns[0]?.color;
+            titleAlign = paragraphs[0]?.align;
           } else {
             textBlocks.push({ type: 'body', paragraphs, rawText: combinedText });
           }
@@ -190,7 +388,15 @@ export async function parsePptxFile(fileOrBuffer) {
         id: `slide-${i + 1}`,
         slideNumber: i + 1,
         title,
+        titleRuns,
+        titleFontFamily,
+        titleColor,
+        titleAlign,
         subtitle,
+        subtitleRuns,
+        subtitleFontFamily,
+        subtitleColor,
+        subtitleAlign,
         textBlocks,
         tables,
         images,

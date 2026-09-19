@@ -18,7 +18,9 @@ import {
   Maximize2,
   Minimize2,
   Table as TableIcon,
-  Image as ImageIcon
+  Image as ImageIcon,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import PlaygroundToolbar from './PlaygroundToolbar';
 import FloatingAnnotationBar from './FloatingAnnotationBar';
@@ -40,6 +42,8 @@ export default function PptxViewer({
   slides: initialSlides = [],
   fileName = 'Presentation.pptx',
   theme = 'modern',
+  showFileSidebar = false,
+  onToggleSidebar,
   onOpenFile,
   onLoadSamplePptx,
   onOpenTools
@@ -531,14 +535,34 @@ export default function PptxViewer({
       >
         {/* Slide Header & Number Badge */}
         <div className="flex items-start justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800/80 pb-4">
-          <div className="flex-1">
+          <div className="flex-1" style={{ textAlign: slide.titleAlign || 'left' }}>
             <h2
               contentEditable={isPlayground && isInteractive}
               suppressContentEditableWarning
               onBlur={(e) => handleSlideContentChange(slideIdx, 'title', e.currentTarget.innerText)}
               className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 rounded px-1 transition-colors"
+              style={{
+                fontFamily: slide.titleFontFamily,
+                color: slide.titleColor,
+              }}
             >
-              {slide.title}
+              {slide.titleRuns && slide.titleRuns.length > 0 ? (
+                slide.titleRuns.map((r, i) => (
+                  <span 
+                    key={`tr-${i}`} 
+                    className={`${r.bold ? 'font-bold' : ''} ${r.italic ? 'italic' : ''} ${r.underline ? 'underline' : ''} ${r.strike ? 'line-through' : ''}`}
+                    style={{ 
+                      fontFamily: r.fontFamily, 
+                      color: r.color,
+                      fontSize: r.fontSize 
+                    }}
+                  >
+                    {r.text}
+                  </span>
+                ))
+              ) : (
+                slide.title
+              )}
             </h2>
             {slide.subtitle && (
               <p
@@ -546,8 +570,29 @@ export default function PptxViewer({
                 suppressContentEditableWarning
                 onBlur={(e) => handleSlideContentChange(slideIdx, 'subtitle', e.currentTarget.innerText)}
                 className="text-sm sm:text-base font-medium text-slate-500 dark:text-slate-400 mt-1.5 outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 rounded px-1 transition-colors"
+                style={{
+                  fontFamily: slide.subtitleFontFamily,
+                  color: slide.subtitleColor,
+                  textAlign: slide.subtitleAlign || 'left'
+                }}
               >
-                {slide.subtitle}
+                {slide.subtitleRuns && slide.subtitleRuns.length > 0 ? (
+                  slide.subtitleRuns.map((r, i) => (
+                    <span 
+                      key={`sr-${i}`} 
+                      className={`${r.bold ? 'font-bold' : ''} ${r.italic ? 'italic' : ''} ${r.underline ? 'underline' : ''} ${r.strike ? 'line-through' : ''}`}
+                      style={{ 
+                        fontFamily: r.fontFamily, 
+                        color: r.color,
+                        fontSize: r.fontSize 
+                      }}
+                    >
+                      {r.text}
+                    </span>
+                  ))
+                ) : (
+                  slide.subtitle
+                )}
               </p>
             )}
           </div>
@@ -565,19 +610,40 @@ export default function PptxViewer({
             <div key={`block-${bIdx}`} className="space-y-2.5">
               {block.paragraphs?.map((para, pIdx) => {
                 const indentClass = para.level === 1 ? 'ml-6' : para.level >= 2 ? 'ml-12' : '';
+                const alignStyle = para.align ? { textAlign: para.align } : {};
                 return (
-                  <div key={`p-${pIdx}`} className={`flex items-start gap-2.5 ${indentClass}`}>
-                    <span className="w-2 h-2 rounded-full bg-blue-500 mt-2 shrink-0" />
+                  <div key={`p-${pIdx}`} className={`flex items-start gap-2.5 ${indentClass}`} style={alignStyle}>
+                    {para.hasBullet !== false && (
+                      para.bulletChar ? (
+                        <span 
+                          className="shrink-0 font-bold select-none text-sm leading-tight mt-1" 
+                          style={{ color: para.bulletColor || 'currentColor', marginRight: '2px' }}
+                        >
+                          {para.bulletChar}
+                        </span>
+                      ) : (
+                        <span 
+                          className="w-2 h-2 rounded-full mt-2 shrink-0 select-none" 
+                          style={{ backgroundColor: para.bulletColor || '#3B82F6' }}
+                        />
+                      )
+                    )}
                     <div 
                       contentEditable={isPlayground && isInteractive}
                       suppressContentEditableWarning
                       onBlur={(e) => handleParagraphChange(slideIdx, bIdx, pIdx, e.currentTarget.innerText)}
                       className="flex-1 text-sm sm:text-base leading-relaxed text-slate-700 dark:text-slate-200 outline-none focus:bg-blue-50/50 dark:focus:bg-blue-950/30 rounded px-1 transition-colors"
+                      style={alignStyle}
                     >
                       {para.runs?.map((run, rIdx) => (
                         <span 
                           key={`run-${rIdx}`}
-                          className={`${run.bold ? 'font-bold text-slate-900 dark:text-white' : ''} ${run.italic ? 'italic' : ''}`}
+                          className={`${run.bold ? 'font-bold' : 'font-normal'} ${run.italic ? 'italic' : ''} ${run.underline ? 'underline' : ''} ${run.strike ? 'line-through' : ''}`}
+                          style={{
+                            fontFamily: run.fontFamily,
+                            color: run.color,
+                            fontSize: run.fontSize
+                          }}
                         >
                           {run.text}
                         </span>
@@ -642,7 +708,25 @@ export default function PptxViewer({
       {/* PPTX Toolbar */}
       <div className="h-14 px-4 sm:px-6 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs z-20">
         {/* Left: Presentation Info & View Switcher */}
-        <div className="flex items-center gap-3.5">
+        <div className="flex items-center gap-3">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className={`p-2 rounded-xl transition-all flex items-center justify-center border ${
+                showFileSidebar
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
+              }`}
+              title="Toggle File Sidebar (Cmd + B)"
+            >
+              {showFileSidebar ? (
+                <PanelLeftClose className="w-4 h-4" />
+              ) : (
+                <PanelLeftOpen className="w-4 h-4" />
+              )}
+            </button>
+          )}
+
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-400 text-white flex items-center justify-center shadow-md shadow-orange-500/20 ring-1 ring-white/20 shrink-0">
             <Presentation className="w-4 h-4" />
           </div>

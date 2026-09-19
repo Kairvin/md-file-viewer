@@ -107,7 +107,7 @@ export default function Navbar({
       />
 
       {/* Left: Sidebar Toggle, Branding & File Info */}
-      <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink-0">
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
@@ -131,10 +131,10 @@ export default function Navbar({
               type="text"
               value={fileName}
               onChange={(e) => setFileName(e.target.value)}
-              className="font-semibold text-xs sm:text-sm bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 focus:bg-slate-100 dark:focus:bg-slate-800 rounded px-1.5 py-0.5 outline-none transition-colors max-w-[110px] sm:max-w-[160px] md:max-w-[200px] truncate"
+              className="font-semibold text-xs sm:text-sm bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 focus:bg-slate-100 dark:focus:bg-slate-800 rounded px-1.5 py-0.5 outline-none transition-colors max-w-[110px] sm:max-w-[140px] md:max-w-[180px] truncate"
               title="Click to rename"
             />
-            <span className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 hidden lg:inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 shrink-0">
+            <span className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 hidden 2xl:inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 shrink-0">
               <span>{stats.words} words</span>
               <span>·</span>
               <span>{stats.readTime} min read</span>
@@ -144,7 +144,7 @@ export default function Navbar({
       </div>
 
       {/* Center: View Mode segmented switch & Tools */}
-      <div className="flex items-center gap-1 sm:gap-1.5">
+      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
         {/* Document Tools Hub Button */}
         {onOpenTools && (
           <button
