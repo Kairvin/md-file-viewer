@@ -54,6 +54,7 @@ export default function FileSidebar({
   onSelectPdfFile,
   onOpenPdfFile,
   onDeletePdfFile,
+  onRenamePdfFile,
 
   // Current active tool
   activeTool = 'markdown', // 'markdown' | 'word' | 'pptx' | 'pdf'
@@ -130,7 +131,7 @@ export default function FileSidebar({
   const startRename = (e, category, id, currentName) => {
     e.stopPropagation();
     setEditingItem({ category, id });
-    setEditName(currentName.replace(/\.(md|markdown|docx|pptx)$/i, ''));
+    setEditName(currentName.replace(/\.(md|markdown|docx|pptx|pdf)$/i, ''));
   };
 
   const submitRename = () => {
@@ -148,6 +149,8 @@ export default function FileSidebar({
       onRenameWordFile?.(editingItem.id, `${cleanName}.docx`);
     } else if (editingItem.category === 'pptx') {
       onRenamePptxFile?.(editingItem.id, `${cleanName}.pptx`);
+    } else if (editingItem.category === 'pdf') {
+      onRenamePdfFile?.(editingItem.id, `${cleanName}.pdf`);
     }
 
     setEditingItem(null);
@@ -831,42 +834,95 @@ export default function FileSidebar({
                   ) : (
                     filteredPdf.map(file => {
                       const isPdfActive = activeTool === 'pdf' && (activePdfId === file.id || activePdfId === file.name);
+                      const isEditing = editingItem?.category === 'pdf' && editingItem?.id === file.id;
+
                       return (
                         <div
                           key={file.id}
-                          onClick={() => onSelectPdfFile ? onSelectPdfFile(file.id) : pdfInputRef.current?.click()}
-                          className={`group flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs cursor-pointer transition-all ${
+                          role="button"
+                          tabIndex={0}
+                          data-testid={`document-item-${file.id}`}
+                          data-doc-category="pdf"
+                          onClick={() => {
+                            if (!isEditing) {
+                              onSelectPdfFile?.(file.id);
+                              if (window.innerWidth < 1024) onClose?.();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
+                              e.preventDefault();
+                              onSelectPdfFile?.(file.id);
+                              if (window.innerWidth < 1024) onClose?.();
+                            }
+                          }}
+                          className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
                             isPdfActive
-                              ? 'bg-red-50 dark:bg-red-950/30 text-red-950 dark:text-red-200 font-semibold shadow-2xs border border-red-200/60 dark:border-red-800/40'
-                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                              ? 'bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-100 font-medium border border-red-200 dark:border-red-800 shadow-2xs ring-1 ring-red-500/20'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
                           }`}
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-                            <FileText className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                            <FileText className={`w-3.5 h-3.5 shrink-0 ${isPdfActive ? 'text-red-600 dark:text-red-400' : 'text-red-500/70'}`} />
                             <div className="min-w-0 flex-1">
-                              <div className="text-xs truncate font-medium">{file.name}</div>
-                              <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                                <span>{formatRelativeTime(file.updatedAt)}</span>
-                              </div>
+                              {isEditing ? (
+                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <input 
+                                    ref={editInputRef}
+                                    type="text"
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    onKeyDown={handleKeyDownRename}
+                                    className="w-full text-xs bg-white dark:bg-slate-900 border border-red-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                                  />
+                                  <button
+                                    onClick={submitRename}
+                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-xs truncate font-medium">{file.name}</div>
+                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                                    {file.numPages && <span>{file.numPages} {file.numPages === 1 ? 'Page' : 'Pages'} · </span>}
+                                    <span>{formatRelativeTime(file.updatedAt)}</span>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </div>
-                          <div className={`flex items-center gap-0.5 transition-opacity ${
-                            isPdfActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                          }`}>
-                            {onDeletePdfFile && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onDeletePdfFile(file.id);
-                                }}
-                                className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                                title="Remove PDF"
-                                aria-label="Remove PDF"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
+
+                          {!isEditing && (
+                            <div className={`flex items-center gap-0.5 transition-opacity ${
+                              isPdfActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                            }`}>
+                              {onRenamePdfFile && (
+                                <button
+                                  onClick={(e) => startRename(e, 'pdf', file.id, file.name)}
+                                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+                                  title="Rename"
+                                  aria-label="Rename PDF"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              )}
+                              {onDeletePdfFile && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeletePdfFile(file.id);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                                  title="Remove PDF"
+                                  aria-label="Remove PDF"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })

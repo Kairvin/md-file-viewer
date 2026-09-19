@@ -19,7 +19,8 @@ export default function ToolsModal({
   onOpenMarkdownFile,
   onOpenPdfFile,
   onLoadSampleWord,
-  onLoadSamplePptx
+  onLoadSamplePptx,
+  onLoadSamplePdf
 }) {
   const docxInputRef = useRef(null);
   const pptxInputRef = useRef(null);
@@ -630,37 +631,37 @@ export default function ToolsModal({
                       <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
                         <Check className="w-2.5 h-2.5 stroke-[3]" />
                       </div>
+                      <span>Markdown-style reading paper</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                      <span>Universal playground & annotations</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                      <span>In-place text editing & highlights</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                      <span>Threaded comments & popovers</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
                       <span>100% Private local rendering</span>
                     </div>
                     <div className="flex items-center gap-2.5">
                       <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
                         <Check className="w-2.5 h-2.5 stroke-[3]" />
                       </div>
-                      <span>Thumbnail browser & navigation</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>Vector-crisp zoom & scrolling</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>Sidebar Workspace Files link</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
                       <span>Direct vector PDF download</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-4 h-4 rounded-full bg-[#65973A] text-white flex items-center justify-center shrink-0 shadow-2xs">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                      <span>Zero cloud latency or limits</span>
                     </div>
                   </div>
                 </div>
@@ -680,14 +681,30 @@ export default function ToolsModal({
                   >
                     <span>{isActive ? 'Currently Active' : 'Go to Editor'}</span>
                   </button>
-                  <button
-                    onClick={() => pdfInputRef.current?.click()}
-                    className={`w-full text-center text-[11px] underline transition-colors ${
-                      isActive ? 'text-[#9FA6B2] hover:text-white' : 'text-[#796C5E] hover:text-[#232528]'
-                    }`}
-                  >
-                    Open .pdf File
-                  </button>
+                  <div className={`flex items-center justify-center gap-2 text-[11px] ${
+                    isActive ? 'text-[#9FA6B2]' : 'text-[#796C5E]'
+                  }`}>
+                    <button
+                      onClick={() => pdfInputRef.current?.click()}
+                      className={`underline transition-colors ${
+                        isActive ? 'hover:text-white' : 'hover:text-[#232528]'
+                      }`}
+                    >
+                      Open .pdf
+                    </button>
+                    <span>·</span>
+                    <button
+                      onClick={() => {
+                        onLoadSamplePdf?.();
+                        onClose();
+                      }}
+                      className={`underline transition-colors ${
+                        isActive ? 'hover:text-white' : 'hover:text-[#232528]'
+                      }`}
+                    >
+                      Sample Report
+                    </button>
+                  </div>
                 </div>
               </div>
             );

@@ -13,9 +13,10 @@ import { parseMarkdown } from './utils/markdownParser';
 import { SAMPLE_MARKDOWN } from './utils/sampleDocument';
 import { parseDocxFile, SAMPLE_WORD_HTML } from './utils/docxParser';
 import { parsePptxFile, SAMPLE_PRESENTATION_SLIDES } from './utils/pptxParser';
+import { parsePdfToHtml, SAMPLE_PDF_HTML } from './utils/pdfParser';
 import { showInAppAlert } from './utils/alerts';
 import { printToPdf, downloadDirectPdf, downloadMarkdown, downloadHtml } from './utils/pdfExport';
-import { getStorageItem, setStorageItem, removeStorageItem, clearPlaygroundDraft } from './utils/storage';
+import { getStorageItem, setStorageItem, removeStorageItem, getPlaygroundDraft, clearPlaygroundDraft } from './utils/storage';
 
 // Additional templates
 const TECH_TEMPLATE = `# Technical Architecture Document 📐
@@ -253,7 +254,19 @@ export default function App() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return [];
+    return [
+      {
+        id: 'sample-pdf-report',
+        name: 'Sample-Systems-Brief.pdf',
+        format: 'pdf',
+        numPages: 2,
+        updatedAt: Date.now()
+      }
+    ];
+  });
+
+  const [activePdfId, setActivePdfId] = useState(() => {
+    return localStorage.getItem('pdf_active_id') || 'sample-pdf-report';
   });
 
   const [pdfData, setPdfData] = useState(() => {
@@ -262,7 +275,11 @@ export default function App() {
       if (saved) return JSON.parse(saved);
     } catch {}
     return {
-      fileName: 'Document.pdf',
+      id: 'sample-pdf-report',
+      fileName: 'Sample-Systems-Brief.pdf',
+      html: SAMPLE_PDF_HTML,
+      numPages: 2,
+      totalWords: 380,
       fileUrl: ''
     };
   });
@@ -279,6 +296,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('pptx_active_id', activePptxId);
   }, [activePptxId]);
+
+  useEffect(() => {
+    localStorage.setItem('pdf_active_id', activePdfId);
+  }, [activePdfId]);
 
   // In-App Confirmation & Alert Modal state
   const [confirmModal, setConfirmModal] = useState({
@@ -925,10 +946,28 @@ export default function App() {
     try {
       const fileUrl = URL.createObjectURL(file);
       const pdfId = 'pdf-' + Date.now();
+
+      // Extract PDF into semantic Markdown-like HTML
+      const parsed = await parsePdfToHtml(file, file.name);
+
+      const newDoc = {
+        id: pdfId,
+        name: file.name,
+        html: parsed.html,
+        numPages: parsed.numPages,
+        totalWords: parsed.totalWords,
+        fileUrl,
+        format: 'pdf',
+        updatedAt: Date.now()
+      };
+
+      await setStorageItem('documents', pdfId, newDoc);
+
       const newMeta = {
         id: pdfId,
         name: file.name,
         format: 'pdf',
+        numPages: parsed.numPages,
         updatedAt: Date.now(),
       };
 
@@ -938,13 +977,173 @@ export default function App() {
         return next;
       });
 
-      setPdfData({ fileName: file.name, fileUrl });
+      setActivePdfId(pdfId);
+      try { localStorage.setItem('pdf_active_id', pdfId); } catch {}
+
+      const activeObj = {
+        id: pdfId,
+        fileName: file.name,
+        html: parsed.html,
+        numPages: parsed.numPages,
+        totalWords: parsed.totalWords,
+        fileUrl
+      };
+      setPdfData(activeObj);
+      try { localStorage.setItem('pdf_active_doc', JSON.stringify(activeObj)); } catch {}
+
       setActiveTool('pdf');
-      showInAppAlert(`Loaded PDF document "${file.name}".`, 'PDF Ready', 'info');
+      showInAppAlert(`Loaded PDF "${file.name}" with ${parsed.numPages} pages into Playground.`, 'PDF Ready', 'info');
     } catch (err) {
+      console.error('Error opening PDF file:', err);
       showInAppAlert(err.message || 'Error opening PDF file.', 'PDF File Error', 'danger');
     }
   }, []);
+
+  // Select PDF Document from library (Reopens existing PDF without Mac file picker)
+  const handleSelectPdfFile = useCallback(async (pdfId) => {
+    setActiveTool('pdf');
+    setActivePdfId(pdfId);
+    try { localStorage.setItem('pdf_active_id', pdfId); } catch {}
+
+    // Special handling for sample PDF report
+    if (pdfId === 'sample-pdf-report') {
+      try {
+        const savedDraft = await getPlaygroundDraft('pdf_draft_Sample-Systems-Brief.pdf');
+        const draftHtml = typeof savedDraft === 'string' ? savedDraft : savedDraft?.html;
+        const sampleDoc = {
+          id: 'sample-pdf-report',
+          fileName: 'Sample-Systems-Brief.pdf',
+          html: (draftHtml && draftHtml.trim().length > 0) ? draftHtml : SAMPLE_PDF_HTML,
+          numPages: 2,
+          totalWords: 380,
+          fileUrl: ''
+        };
+        setPdfData(sampleDoc);
+        try { localStorage.setItem('pdf_active_doc', JSON.stringify(sampleDoc)); } catch {}
+        return;
+      } catch (e) {
+        console.warn('Could not read sample PDF draft:', e);
+      }
+      const sampleDoc = {
+        id: 'sample-pdf-report',
+        fileName: 'Sample-Systems-Brief.pdf',
+        html: SAMPLE_PDF_HTML,
+        numPages: 2,
+        totalWords: 380,
+        fileUrl: ''
+      };
+      setPdfData(sampleDoc);
+      try { localStorage.setItem('pdf_active_doc', JSON.stringify(sampleDoc)); } catch {}
+      return;
+    }
+
+    const fileMeta = pdfFiles.find(f => f.id === pdfId || f.name === pdfId);
+    if (!fileMeta) return;
+
+    // 1. Check if draft exists in IndexedDB
+    try {
+      const savedDraft = await getPlaygroundDraft(`pdf_draft_${fileMeta.name}`);
+      const draftHtml = typeof savedDraft === 'string' ? savedDraft : savedDraft?.html;
+      if (draftHtml && draftHtml.trim().length > 0) {
+        const docObj = {
+          id: fileMeta.id,
+          fileName: fileMeta.name,
+          html: draftHtml,
+          numPages: fileMeta.numPages || 1,
+          totalWords: fileMeta.totalWords || 0,
+          fileUrl: pdfData.fileName === fileMeta.name ? pdfData.fileUrl : ''
+        };
+        setPdfData(docObj);
+        try { localStorage.setItem('pdf_active_doc', JSON.stringify(docObj)); } catch {}
+        return;
+      }
+    } catch (e) {
+      console.warn('Could not read PDF draft from IndexedDB:', e);
+    }
+
+    // 2. Read stored document from IndexedDB
+    try {
+      const stored = await getStorageItem('documents', pdfId);
+      if (stored) {
+        const docObj = {
+          id: stored.id,
+          fileName: stored.name || fileMeta.name,
+          html: stored.html || '',
+          numPages: stored.numPages || fileMeta.numPages || 1,
+          totalWords: stored.totalWords || 0,
+          fileUrl: stored.fileUrl || (pdfData.fileName === fileMeta.name ? pdfData.fileUrl : '')
+        };
+        setPdfData(docObj);
+        try { localStorage.setItem('pdf_active_doc', JSON.stringify(docObj)); } catch {}
+        return;
+      }
+    } catch (e) {
+      console.warn('Could not read PDF from documents store:', e);
+    }
+
+    // 3. Fallback: if already loaded in memory
+    if (pdfData.fileName === fileMeta.name && pdfData.html) {
+      return;
+    }
+
+    // 4. Default fallback
+    setPdfData({
+      id: fileMeta.id,
+      fileName: fileMeta.name,
+      html: '',
+      numPages: fileMeta.numPages || 1,
+      totalWords: 0,
+      fileUrl: ''
+    });
+  }, [pdfFiles, pdfData]);
+
+  // Load Sample PDF Doc
+  const handleLoadSamplePdf = useCallback(() => {
+    setActiveTool('pdf');
+    setActivePdfId('sample-pdf-report');
+    setPdfFiles(prev => {
+      if (prev.some(f => f.id === 'sample-pdf-report')) return prev;
+      const next = [
+        {
+          id: 'sample-pdf-report',
+          name: 'Sample-Systems-Brief.pdf',
+          format: 'pdf',
+          numPages: 2,
+          updatedAt: Date.now()
+        },
+        ...prev
+      ];
+      try { localStorage.setItem('pdf_files_library', JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    const sample = {
+      id: 'sample-pdf-report',
+      fileName: 'Sample-Systems-Brief.pdf',
+      html: SAMPLE_PDF_HTML,
+      numPages: 2,
+      totalWords: 380,
+      fileUrl: ''
+    };
+    setPdfData(sample);
+    try { localStorage.setItem('pdf_active_doc', JSON.stringify(sample)); } catch {}
+  }, []);
+
+  // Rename PDF Document
+  const handleRenamePdfFile = useCallback(async (pdfId, newName) => {
+    setPdfFiles(prev => {
+      const next = prev.map(f => f.id === pdfId ? { ...f, name: newName, updatedAt: Date.now() } : f);
+      try { localStorage.setItem('pdf_files_library', JSON.stringify(next)); } catch {}
+      return next;
+    });
+    const stored = await getStorageItem('documents', pdfId);
+    if (stored) {
+      await setStorageItem('documents', pdfId, { ...stored, name: newName });
+    }
+    if (activePdfId === pdfId || pdfData.fileName === newName) {
+      setPdfData(prev => ({ ...prev, fileName: newName }));
+    }
+  }, [activePdfId, pdfData.fileName]);
 
   // Delete PDF Document from library
   const handleDeletePdfFile = useCallback((pdfId) => {
@@ -957,7 +1156,7 @@ export default function App() {
       confirmLabel: 'Remove File',
       cancelLabel: 'Cancel',
       variant: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
         let remaining = [];
         setPdfFiles(prev => {
           remaining = prev.filter(f => f.id !== pdfId);
@@ -965,18 +1164,24 @@ export default function App() {
           return remaining;
         });
 
-        if (pdfData.fileName === pdfToDelete?.name) {
+        await removeStorageItem('documents', pdfId);
+        if (pdfToDelete) {
+          await clearPlaygroundDraft(`pdf_draft_${pdfToDelete.name}`);
+        }
+
+        if (activePdfId === pdfId || pdfData.fileName === pdfToDelete?.name) {
           if (remaining.length > 0) {
-            setPdfData({ fileName: remaining[0].name, fileUrl: '' });
+            handleSelectPdfFile(remaining[0].id);
           } else {
-            setPdfData({ fileName: '', fileUrl: '' });
+            setActivePdfId('');
+            setPdfData({ fileName: '', html: '', fileUrl: '' });
             try { localStorage.removeItem('pdf_active_doc'); } catch {}
           }
         }
         closeConfirmModal();
       }
     });
-  }, [pdfFiles, pdfData, closeConfirmModal]);
+  }, [pdfFiles, activePdfId, pdfData, handleSelectPdfFile, closeConfirmModal]);
 
   // Load Sample PPTX Deck
   const handleLoadSamplePptx = useCallback(() => {
@@ -1086,9 +1291,11 @@ export default function App() {
             onRenamePptxFile={handleRenamePptxFile}
 
             pdfFiles={pdfFiles}
-            activePdfId={pdfData.fileName}
+            activePdfId={activePdfId}
+            onSelectPdfFile={handleSelectPdfFile}
             onOpenPdfFile={handleOpenPdfFile}
             onDeletePdfFile={handleDeletePdfFile}
+            onRenamePdfFile={handleRenamePdfFile}
 
             activeTool={activeTool}
             onClose={() => setShowFileSidebar(false)}
@@ -1124,6 +1331,10 @@ export default function App() {
             <PdfViewer 
               fileUrl={pdfData.fileUrl}
               fileName={pdfData.fileName}
+              html={pdfData.html}
+              numPages={pdfData.numPages}
+              totalWords={pdfData.totalWords}
+              theme={theme}
               showFileSidebar={showFileSidebar}
               onToggleSidebar={() => setShowFileSidebar(prev => !prev)}
               onOpenFile={handleOpenPdfFile}
@@ -1229,6 +1440,7 @@ export default function App() {
         onOpenPdfFile={handleOpenPdfFile}
         onLoadSampleWord={handleLoadSampleWord}
         onLoadSamplePptx={handleLoadSamplePptx}
+        onLoadSamplePdf={handleLoadSamplePdf}
       />
 
       {/* Global In-App Confirmation / Alert Modal */}
