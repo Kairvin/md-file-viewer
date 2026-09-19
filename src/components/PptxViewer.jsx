@@ -1101,16 +1101,16 @@ export default function PptxViewer({
   return (
     <div ref={containerRef} className="flex-1 flex flex-col h-full overflow-hidden bg-slate-100/70 dark:bg-slate-950 transition-colors relative">
       {/* Top PPTX Navigation Bar */}
-      <div className="h-14 px-3 sm:px-5 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md flex items-center justify-between gap-2 shrink-0 shadow-xs z-20 min-w-0">
+      <div className="h-14 px-3 sm:px-5 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md flex items-center justify-between gap-2 sm:gap-4 transition-colors min-w-0 shrink-0 z-20 shadow-xs">
         {/* Left: Presentation Info & View Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
-              className={`p-2 rounded-xl transition-all flex items-center justify-center border ${
+              className={`p-1.5 sm:p-2 rounded-xl border transition-all text-xs flex items-center justify-center shrink-0 ${
                 showFileSidebar
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 shadow-2xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800'
+                  ? 'bg-slate-200/80 dark:bg-slate-800 text-slate-900 dark:text-white border-slate-300 dark:border-slate-700 shadow-2xs'
+                  : 'bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 border-transparent hover:border-slate-200 dark:hover:border-slate-700'
               }`}
               title="Toggle File Sidebar (Cmd + B)"
             >
@@ -1122,33 +1122,36 @@ export default function PptxViewer({
             </button>
           )}
 
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-400 text-white flex items-center justify-center shadow-md shadow-orange-500/20 ring-1 ring-white/20 shrink-0">
-            <Presentation className="w-4 h-4" />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-950 flex items-center justify-center shadow-xs border border-slate-800 dark:border-slate-200 shrink-0">
+            <Presentation className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-[130px] sm:max-w-[180px] tracking-tight">
+
+          <div className="min-w-0 shrink">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-[130px] sm:max-w-[180px] md:max-w-xs tracking-tight">
                 {fileName}
               </span>
-              <span className="font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 uppercase shrink-0">
+              <span className="font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 uppercase shrink-0">
                 .pptx
               </span>
-              <span className="text-xs text-slate-400 hidden xl:inline font-medium shrink-0">
-                · {slides.length} {slides.length === 1 ? 'Slide' : 'Slides'}
+            </div>
+            <div className="flex items-center gap-2 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400">
+              <span className="font-medium">
+                {slides.length} {slides.length === 1 ? 'Slide' : 'Slides'}
               </span>
             </div>
           </div>
 
           {/* View Mode Toggle: Deck vs Flow */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 ml-2 shrink-0">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 sm:p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 ml-1 sm:ml-2 shrink-0">
             <button
               onClick={() => {
                 syncSlideHtml(activeSlideIndex);
                 setDisplayMode('deck');
               }}
-              className={`px-3 py-1 text-xs font-semibold flex items-center gap-1.5 rounded-lg transition-all ${
+              className={`p-1.5 sm:px-3 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
                 displayMode === 'deck'
-                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs font-semibold'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
               title="Slide Deck Mode (Interactive Carousel & Arrows)"
@@ -1161,9 +1164,9 @@ export default function PptxViewer({
                 syncSlideHtml(activeSlideIndex);
                 setDisplayMode('flow');
               }}
-              className={`px-3 py-1 text-xs font-semibold flex items-center gap-1.5 rounded-lg transition-all ${
+              className={`p-1.5 sm:px-3 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
                 displayMode === 'flow'
-                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs font-semibold'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
               title="Document Flow Mode (Continuous Scroll & Stack)"
@@ -1175,7 +1178,7 @@ export default function PptxViewer({
         </div>
 
         {/* Center/Right Actions */}
-        <div className="flex items-center gap-2 shrink-0 ml-auto">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto">
           {/* Deck navigation in Deck mode */}
           {displayMode === 'deck' && slides.length > 0 && (
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
@@ -1210,22 +1213,22 @@ export default function PptxViewer({
           {/* Playground Mode Toggle */}
           <button
             onClick={() => setIsPlayground(!isPlayground)}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-[0.98] ${
+            className={`p-1.5 sm:px-3 sm:py-2 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-all active:scale-[0.98] ${
               isPlayground 
-                ? 'bg-blue-600 text-white border-blue-500 shadow-xs' 
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white border-slate-300 dark:border-slate-600 shadow-xs font-semibold' 
+                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
             }`}
             title="Toggle Playground (Edit text, highlight colors, and add comments)"
           >
-            {isPlayground ? <PenTool className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">{isPlayground ? 'Playground Active' : 'Read Mode'}</span>
+            <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+            <span className="hidden sm:inline">{isPlayground ? 'Playground Active' : 'Playground'}</span>
           </button>
 
           {/* Download Presentation PDF */}
           <button
             onClick={handleExportPdf}
             disabled={isExportingPdf}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-500 text-white shadow-md shadow-orange-500/20 border border-amber-400/30 transition-all text-xs font-semibold flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50 shrink-0"
+            className="px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white shadow-xs border border-slate-800 dark:border-slate-200 transition-all text-xs font-semibold flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50 shrink-0"
             title="Download Landscape Presentation PDF (1 slide per page)"
           >
             {isExportingPdf ? (
