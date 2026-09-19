@@ -1101,9 +1101,9 @@ export default function PptxViewer({
   return (
     <div ref={containerRef} className="flex-1 flex flex-col h-full overflow-hidden bg-slate-100/70 dark:bg-slate-950 transition-colors relative">
       {/* Top PPTX Navigation Bar */}
-      <div className="h-14 px-4 sm:px-6 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md flex items-center justify-between shrink-0 shadow-xs z-20">
+      <div className="h-14 px-3 sm:px-5 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md flex items-center justify-between gap-2 shrink-0 shadow-xs z-20 min-w-0">
         {/* Left: Presentation Info & View Switcher */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
@@ -1127,20 +1127,20 @@ export default function PptxViewer({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-xs tracking-tight">
+              <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-[130px] sm:max-w-[180px] tracking-tight">
                 {fileName}
               </span>
-              <span className="font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 uppercase">
+              <span className="font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 uppercase shrink-0">
                 .pptx
               </span>
-              <span className="text-xs text-slate-400 hidden md:inline font-medium">
+              <span className="text-xs text-slate-400 hidden xl:inline font-medium shrink-0">
                 · {slides.length} {slides.length === 1 ? 'Slide' : 'Slides'}
               </span>
             </div>
           </div>
 
           {/* View Mode Toggle: Deck vs Flow */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 ml-2">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 ml-2 shrink-0">
             <button
               onClick={() => {
                 syncSlideHtml(activeSlideIndex);
@@ -1175,7 +1175,7 @@ export default function PptxViewer({
         </div>
 
         {/* Center/Right Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
           {/* Deck navigation in Deck mode */}
           {displayMode === 'deck' && slides.length > 0 && (
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
@@ -1221,25 +1221,11 @@ export default function PptxViewer({
             <span className="hidden sm:inline">{isPlayground ? 'Playground Active' : 'Read Mode'}</span>
           </button>
 
-          {/* Switch Tool */}
-          {onOpenTools && (
-            <button
-              onClick={onOpenTools}
-              className="p-1.5 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all border border-slate-200/90 dark:border-slate-700/90 shadow-2xs"
-              title="Open Document Tools Hub"
-            >
-              <div className="w-4 h-4 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <Wrench className="w-2.5 h-2.5" />
-              </div>
-              <span className="hidden sm:inline">Tools</span>
-            </button>
-          )}
-
           {/* Download Presentation PDF */}
           <button
             onClick={handleExportPdf}
             disabled={isExportingPdf}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-500 text-white shadow-md shadow-orange-500/20 border border-amber-400/30 transition-all text-xs font-semibold flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-500 text-white shadow-md shadow-orange-500/20 border border-amber-400/30 transition-all text-xs font-semibold flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50 shrink-0"
             title="Download Landscape Presentation PDF (1 slide per page)"
           >
             {isExportingPdf ? (

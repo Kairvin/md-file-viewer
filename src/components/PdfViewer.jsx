@@ -812,7 +812,7 @@ export default function PdfViewer({
         </div>
 
         {/* Center / Right: Playground & Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Playground Mode Toggle */}
           <button
             onClick={() => setIsPlayground(!isPlayground)}
@@ -837,25 +837,11 @@ export default function PdfViewer({
             <span className="hidden sm:inline">Open .pdf</span>
           </button>
 
-          {/* Tools Hub Button */}
-          {onOpenTools && (
-            <button
-              onClick={onOpenTools}
-              className="p-1.5 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all border border-slate-200/90 dark:border-slate-700/90 shadow-2xs"
-              title="Open Document Tools Hub"
-            >
-              <div className="w-4 h-4 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <Wrench className="w-2.5 h-2.5" />
-              </div>
-              <span className="hidden sm:inline">Tools</span>
-            </button>
-          )}
-
           {/* Download PDF */}
           <button
             onClick={handleDirectPdfDownload}
             disabled={isExportingPdf}
-            className="p-1.5 px-3.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-semibold shadow-md shadow-red-500/20 border border-red-400/30 flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+            className="p-1.5 px-3.5 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-semibold shadow-md shadow-red-500/20 border border-red-400/30 flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50 shrink-0"
             title="Download annotated & edited document as high-quality PDF"
           >
             <Download className="w-3.5 h-3.5" />

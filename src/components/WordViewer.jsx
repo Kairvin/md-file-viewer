@@ -611,7 +611,7 @@ export default function WordViewer({
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -634,20 +634,9 @@ export default function WordViewer({
           </button>
 
           <button
-            onClick={onOpenTools}
-            className="p-1.5 px-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all border border-slate-200/90 dark:border-slate-700/90 shadow-2xs"
-            title="Switch to another tool"
-          >
-            <div className="w-4 h-4 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <Wrench className="w-2.5 h-2.5" />
-            </div>
-            <span className="hidden sm:inline">Tools</span>
-          </button>
-
-          <button
             onClick={handleDirectPdfDownload}
             disabled={isExportingPdf}
-            className="p-1.5 px-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs font-semibold shadow-md shadow-indigo-500/20 border border-indigo-400/30 flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+            className="p-1.5 px-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs font-semibold shadow-md shadow-indigo-500/20 border border-indigo-400/30 flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50 shrink-0"
             title="Download publication-grade vector PDF"
           >
             <Download className="w-3.5 h-3.5" />
