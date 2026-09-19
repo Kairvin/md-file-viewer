@@ -339,6 +339,115 @@ export default function App() {
     return () => window.removeEventListener('app-alert', handleAppAlert);
   }, [closeConfirmModal]);
 
+  // Sidebar folders library state
+  const [folders, setFolders] = useState(() => {
+    try {
+      const saved = localStorage.getItem('document_folders_library');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('document_folders_library', JSON.stringify(folders));
+    } catch {}
+  }, [folders]);
+
+  // Folder management handlers
+  const handleCreateFolder = useCallback((category, name) => {
+    const folderId = `folder-${category}-${Date.now()}`;
+    const newFolder = {
+      id: folderId,
+      name: (name && name.trim()) || 'New Folder',
+      category,
+      createdAt: Date.now()
+    };
+    setFolders(prev => [...prev, newFolder]);
+    return folderId;
+  }, []);
+
+  const handleRenameFolder = useCallback((folderId, newName) => {
+    setFolders(prev => prev.map(f => f.id === folderId ? { ...f, name: newName } : f));
+  }, []);
+
+  const handleDeleteFolder = useCallback((folderId) => {
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Folder',
+      fileName: folder.name,
+      message: `Are you sure you want to delete "${folder.name}"? All files inside it will be kept and moved to the main list.`,
+      confirmLabel: 'Delete Folder',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+      isAlert: false,
+      onConfirm: () => {
+        setFolders(prev => prev.filter(f => f.id !== folderId));
+        if (folder.category === 'markdown') {
+          setFiles(prev => {
+            const next = prev.map(file => file.folderId === folderId ? { ...file, folderId: null } : file);
+            try { localStorage.setItem('md_files_library', JSON.stringify(next)); } catch {}
+            return next;
+          });
+        } else if (folder.category === 'word') {
+          setWordFiles(prev => {
+            const next = prev.map(file => file.folderId === folderId ? { ...file, folderId: null } : file);
+            try { localStorage.setItem('docx_files_library', JSON.stringify(next)); } catch {}
+            return next;
+          });
+        } else if (folder.category === 'pptx') {
+          setPptxFiles(prev => {
+            const next = prev.map(file => file.folderId === folderId ? { ...file, folderId: null } : file);
+            try { localStorage.setItem('pptx_files_library', JSON.stringify(next)); } catch {}
+            return next;
+          });
+        } else if (folder.category === 'pdf') {
+          setPdfFiles(prev => {
+            const next = prev.map(file => file.folderId === folderId ? { ...file, folderId: null } : file);
+            try { localStorage.setItem('pdf_files_library', JSON.stringify(next)); } catch {}
+            return next;
+          });
+        }
+        closeConfirmModal();
+      }
+    });
+  }, [folders, closeConfirmModal]);
+
+  const handleMoveFileToFolder = useCallback((fileId, targetFolderId, category) => {
+    if (category === 'markdown') {
+      setFiles(prev => {
+        const next = prev.map(f => f.id === fileId ? { ...f, folderId: targetFolderId } : f);
+        try { localStorage.setItem('md_files_library', JSON.stringify(next)); } catch {}
+        return next;
+      });
+    } else if (category === 'word') {
+      setWordFiles(prev => {
+        const next = prev.map(f => f.id === fileId ? { ...f, folderId: targetFolderId } : f);
+        try { localStorage.setItem('docx_files_library', JSON.stringify(next)); } catch {}
+        return next;
+      });
+    } else if (category === 'pptx') {
+      setPptxFiles(prev => {
+        const next = prev.map(f => f.id === fileId ? { ...f, folderId: targetFolderId } : f);
+        try { localStorage.setItem('pptx_files_library', JSON.stringify(next)); } catch {}
+        return next;
+      });
+    } else if (category === 'pdf') {
+      setPdfFiles(prev => {
+        const next = prev.map(f => f.id === fileId ? { ...f, folderId: targetFolderId } : f);
+        try { localStorage.setItem('pdf_files_library', JSON.stringify(next)); } catch {}
+        return next;
+      });
+    }
+  }, []);
+
+
+
   // Active file derived from state
   const activeFile = useMemo(() => {
     return files.find(f => f.id === activeFileId) || files[0] || {
@@ -1198,8 +1307,10 @@ export default function App() {
   // Global file drag-and-drop router across formats (.md, .docx, .pptx, .pdf)
   useEffect(() => {
     const handleDragOver = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+      if (e.dataTransfer?.types?.includes('Files')) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
     };
 
     const handleDrop = (e) => {
@@ -1296,6 +1407,12 @@ export default function App() {
             onOpenPdfFile={handleOpenPdfFile}
             onDeletePdfFile={handleDeletePdfFile}
             onRenamePdfFile={handleRenamePdfFile}
+
+            folders={folders}
+            onCreateFolder={handleCreateFolder}
+            onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
+            onMoveFileToFolder={handleMoveFileToFolder}
 
             activeTool={activeTool}
             onClose={() => setShowFileSidebar(false)}

@@ -11,7 +11,9 @@ import {
   Check, 
   X, 
   Download, 
+  Folder,
   FolderOpen, 
+  FolderPlus,
   PanelLeftClose,
   Sparkles,
   ChevronDown,
@@ -56,6 +58,13 @@ export default function FileSidebar({
   onDeletePdfFile,
   onRenamePdfFile,
 
+  // Folders
+  folders = [],
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onMoveFileToFolder,
+
   // Current active tool
   activeTool = 'markdown', // 'markdown' | 'word' | 'pptx' | 'pdf'
 
@@ -91,7 +100,21 @@ export default function FileSidebar({
     pdf: false
   });
 
-  // Inline rename state: { category: 'markdown'|'word'|'pptx', id: string }
+  // Folder creation and organization state
+  const [creatingFolderCategory, setCreatingFolderCategory] = useState(null); // 'markdown' | 'word' | 'pptx' | 'pdf' | null
+  const [newFolderName, setNewFolderName] = useState('');
+  const newFolderInputRef = useRef(null);
+
+  const [collapsedFolders, setCollapsedFolders] = useState({});
+  const [editingFolderId, setEditingFolderId] = useState(null);
+  const [editingFolderName, setEditingFolderName] = useState('');
+  const editFolderInputRef = useRef(null);
+
+  // Drag-and-drop state
+  const [draggedItem, setDraggedItem] = useState(null); // { fileId, category }
+  const [dragOverTarget, setDragOverTarget] = useState(null); // { type: 'folder' | 'root', id?: string, category: string }
+
+  // Inline rename state: { category: 'markdown'|'word'|'pptx'|'pdf', id: string }
   const [editingItem, setEditingItem] = useState(null);
   const [editName, setEditName] = useState('');
   const editInputRef = useRef(null);
@@ -166,6 +189,96 @@ export default function FileSidebar({
     }
   };
 
+  // Focus new folder input when folder creation starts
+  useEffect(() => {
+    if (creatingFolderCategory && newFolderInputRef.current) {
+      newFolderInputRef.current.focus();
+      newFolderInputRef.current.select();
+    }
+  }, [creatingFolderCategory]);
+
+  // Focus rename folder input when folder rename starts
+  useEffect(() => {
+    if (editingFolderId && editFolderInputRef.current) {
+      editFolderInputRef.current.focus();
+      editFolderInputRef.current.select();
+    }
+  }, [editingFolderId]);
+
+  const handleStartCreateFolder = (category) => {
+    setCollapsedSections(prev => ({ ...prev, [category]: false }));
+    setCreatingFolderCategory(category);
+    setNewFolderName('');
+  };
+
+  const handleSubmitCreateFolder = () => {
+    if (!creatingFolderCategory) return;
+    const cleanName = newFolderName.trim() || 'New Folder';
+    const folderId = onCreateFolder?.(creatingFolderCategory, cleanName);
+    setCreatingFolderCategory(null);
+    setNewFolderName('');
+    if (folderId) {
+      setCollapsedFolders(prev => ({ ...prev, [folderId]: false }));
+    }
+  };
+
+  const handleCancelCreateFolder = () => {
+    setCreatingFolderCategory(null);
+    setNewFolderName('');
+  };
+
+  const handleStartRenameFolder = (e, folder) => {
+    e.stopPropagation();
+    setEditingFolderId(folder.id);
+    setEditingFolderName(folder.name);
+  };
+
+  const handleSubmitRenameFolder = () => {
+    if (!editingFolderId) return;
+    const clean = editingFolderName.trim();
+    if (clean) {
+      onRenameFolder?.(editingFolderId, clean);
+    }
+    setEditingFolderId(null);
+  };
+
+  const handleCancelRenameFolder = () => {
+    setEditingFolderId(null);
+  };
+
+  const toggleFolder = (folderId) => {
+    setCollapsedFolders(prev => ({ ...prev, [folderId]: !prev[folderId] }));
+  };
+
+  const handleDropOnFileOrFolder = (e, targetFolderId, targetCategory) => {
+    e.preventDefault();
+    e.stopPropagation();
+    let item = draggedItem;
+    if (!item) {
+      try {
+        const raw = e.dataTransfer.getData('text/plain');
+        if (raw) item = JSON.parse(raw);
+      } catch {}
+    }
+    if (!item) return;
+
+    if (item.category !== targetCategory) {
+      showInAppAlert(
+        `Cannot move a ${item.category} file into a ${targetCategory} folder. Folders only accept documents of the matching format.`,
+        'Category Mismatch',
+        'warning'
+      );
+      return;
+    }
+
+    onMoveFileToFolder?.(item.fileId, targetFolderId, targetCategory);
+    if (targetFolderId) {
+      setCollapsedFolders(prev => ({ ...prev, [targetFolderId]: false }));
+    }
+    setDraggedItem(null);
+    setDragOverTarget(null);
+  };
+
   const handleUniversalImport = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -212,6 +325,680 @@ export default function FileSidebar({
   const filteredWord = wordFiles.filter(f => !query || f.name.toLowerCase().includes(query));
   const filteredPptx = pptxFiles.filter(f => !query || f.name.toLowerCase().includes(query));
   const filteredPdf = pdfFiles.filter(f => !query || f.name.toLowerCase().includes(query));
+
+  // Render a folder row with its nested files
+  const renderFolderRow = (folder, folderFiles, renderCard, colorClass) => {
+    const isCollapsed = !!collapsedFolders[folder.id];
+    const isDragOver = dragOverTarget?.type === 'folder' && dragOverTarget?.id === folder.id;
+    const isEditing = editingFolderId === folder.id;
+
+    return (
+      <div key={folder.id} className="space-y-0.5" data-testid={`folder-item-${folder.id}`}>
+        <div
+          onDragOver={(e) => {
+            let itemCat = null;
+            try {
+              const raw = e.dataTransfer.getData('text/plain');
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed?.category) itemCat = parsed.category;
+              }
+            } catch {}
+
+            if (!itemCat) {
+              itemCat = draggedItem?.category;
+            }
+
+            if (itemCat === folder.category) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = 'move';
+              if (dragOverTarget?.id !== folder.id) {
+                setDragOverTarget({ type: 'folder', id: folder.id, category: folder.category });
+              }
+            }
+          }}
+          onDragLeave={(e) => {
+            e.stopPropagation();
+            if (dragOverTarget?.id === folder.id) {
+              setDragOverTarget(null);
+            }
+          }}
+          onDrop={(e) => handleDropOnFileOrFolder(e, folder.id, folder.category)}
+          onClick={() => toggleFolder(folder.id)}
+          className={`group flex items-center justify-between px-2 py-1.5 rounded-xl cursor-pointer transition-all ${
+            isDragOver
+              ? 'ring-2 ring-blue-500 bg-blue-100/70 dark:bg-blue-950/60 shadow-xs'
+              : 'hover:bg-slate-100/80 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFolder(folder.id);
+              }}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 transition-colors"
+              title={isCollapsed ? "Expand folder" : "Collapse folder"}
+            >
+              {isCollapsed ? (
+                <ChevronRight className="w-3 h-3" />
+              ) : (
+                <ChevronDown className="w-3 h-3" />
+              )}
+            </button>
+
+            {isCollapsed ? (
+              <Folder className={`w-3.5 h-3.5 shrink-0 ${colorClass}`} />
+            ) : (
+              <FolderOpen className={`w-3.5 h-3.5 shrink-0 ${colorClass}`} />
+            )}
+
+            {isEditing ? (
+              <div className="flex items-center gap-1 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                <input
+                  ref={editFolderInputRef}
+                  type="text"
+                  value={editingFolderName}
+                  onChange={(e) => setEditingFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSubmitRenameFolder();
+                    if (e.key === 'Escape') handleCancelRenameFolder();
+                  }}
+                  className="w-full text-xs bg-white dark:bg-slate-900 border border-blue-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={handleSubmitRenameFolder}
+                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <span className="text-xs font-semibold truncate flex-1">{folder.name}</span>
+            )}
+
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0">
+              {folderFiles.length}
+            </span>
+          </div>
+
+          {!isEditing && (
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={(e) => handleStartRenameFolder(e, folder)}
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded transition-colors"
+                title="Rename Folder"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteFolder?.(folder.id);
+                }}
+                className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                title="Delete Folder"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {!isCollapsed && (
+          <div className="ml-3 pl-2.5 border-l border-slate-200 dark:border-slate-800 space-y-0.5 py-0.5">
+            {folderFiles.length === 0 ? (
+              <div className="px-2 py-1 text-[10px] text-slate-400 italic">
+                Folder is empty (drag files here)
+              </div>
+            ) : (
+              folderFiles.map(file => renderCard(file, true))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render inline folder creation form
+  const renderInlineCreateFolder = (category, accentColor) => {
+    if (creatingFolderCategory !== category) return null;
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-slate-100/90 dark:bg-slate-800/90 rounded-xl border border-slate-300/80 dark:border-slate-700/80 my-1 animate-in fade-in duration-150">
+        <FolderPlus className={`w-3.5 h-3.5 shrink-0 ${accentColor}`} />
+        <input
+          ref={newFolderInputRef}
+          type="text"
+          placeholder="Folder name..."
+          value={newFolderName}
+          onChange={(e) => setNewFolderName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSubmitCreateFolder();
+            if (e.key === 'Escape') handleCancelCreateFolder();
+          }}
+          className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-xs text-slate-900 dark:text-white px-2 py-0.5 rounded-lg outline-none focus:border-blue-500"
+        />
+        <button
+          type="button"
+          onClick={handleSubmitCreateFolder}
+          className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-950 text-emerald-600 rounded transition-colors"
+          title="Create Folder"
+          data-testid="submit-new-folder-btn"
+        >
+          <Check className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleCancelCreateFolder}
+          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 rounded transition-colors"
+          title="Cancel"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  };
+
+  // Render root category dropzone
+  const renderRootDropzone = (category) => {
+    if (!draggedItem || draggedItem.category !== category) return null;
+    const isDragOver = dragOverTarget?.type === 'root' && dragOverTarget?.category === category;
+    return (
+      <div
+        onDragOver={(e) => {
+          if (draggedItem && draggedItem.category === category) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            if (dragOverTarget?.type !== 'root' || dragOverTarget?.category !== category) {
+              setDragOverTarget({ type: 'root', category });
+            }
+          }
+        }}
+        onDragLeave={(e) => {
+          e.stopPropagation();
+          if (dragOverTarget?.type === 'root' && dragOverTarget?.category === category) {
+            setDragOverTarget(null);
+          }
+        }}
+        onDrop={(e) => handleDropOnFileOrFolder(e, null, category)}
+        className={`border-2 border-dashed rounded-xl py-2 px-3 text-center text-[10px] font-medium transition-all my-1.5 cursor-pointer ${
+          isDragOver
+            ? 'border-blue-500 bg-blue-50/90 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 ring-2 ring-blue-500/20'
+            : 'border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-slate-400'
+        }`}
+        data-testid={`root-dropzone-${category}`}
+      >
+        Drop here to move out of folder
+      </div>
+    );
+  };
+
+  // Render individual Markdown document item
+  const renderMarkdownCard = (file, isNested = false) => {
+    const isActive = activeTool === 'markdown' && file.id === resolvedActiveMdId;
+    const isEditing = editingItem?.category === 'markdown' && editingItem?.id === file.id;
+    const isDragging = draggedItem?.fileId === file.id;
+
+    return (
+      <div
+        key={file.id}
+        role="button"
+        tabIndex={0}
+        draggable={!isEditing}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: file.id, category: 'markdown' }));
+          e.dataTransfer.effectAllowed = 'move';
+          setDraggedItem({ fileId: file.id, category: 'markdown' });
+        }}
+        onDragEnd={() => {
+          setDraggedItem(null);
+          setDragOverTarget(null);
+        }}
+        data-testid={`document-item-${file.id}`}
+        data-doc-category="markdown"
+        data-in-folder={isNested ? 'true' : 'false'}
+        onClick={() => {
+          if (!isEditing) {
+            resolvedSelectMd?.(file.id);
+            if (window.innerWidth < 1024) onClose?.();
+          }
+        }}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
+            e.preventDefault();
+            resolvedSelectMd?.(file.id);
+            if (window.innerWidth < 1024) onClose?.();
+          }
+        }}
+        className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+          isDragging ? 'opacity-40 ring-2 ring-blue-400' : ''
+        } ${
+          isActive
+            ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-100 font-medium border border-blue-200 dark:border-blue-800 shadow-2xs ring-1 ring-blue-500/20'
+            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+          <FileCode className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-blue-500/70'}`} />
+          <div className="min-w-0 flex-1">
+            {isEditing ? (
+              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <input 
+                  ref={editInputRef}
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={handleKeyDownRename}
+                  className="w-full text-xs bg-white dark:bg-slate-900 border border-blue-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={submitRename}
+                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="text-xs truncate font-medium">{file.name}</div>
+                <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                  <span>{formatWordCount(file.content)}</span>
+                  <span>·</span>
+                  <span>{formatRelativeTime(file.updatedAt)}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {!isEditing && (
+          <div className={`flex items-center gap-0.5 transition-opacity ${
+            isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+          }`}>
+            <button
+              type="button"
+              onClick={(e) => startRename(e, 'markdown', file.id, file.name)}
+              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+              title="Rename"
+              aria-label="Rename document"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                downloadMarkdown(file.content, file.name);
+              }}
+              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+              title="Download"
+              aria-label="Download document"
+            >
+              <Download className="w-3 h-3" />
+            </button>
+            {resolvedDeleteMd && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  resolvedDeleteMd(file.id);
+                }}
+                className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                title="Delete Document"
+                aria-label="Delete document"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render individual Word document item
+  const renderWordCard = (doc, isNested = false) => {
+    const isActive = activeTool === 'word' && doc.id === activeWordId;
+    const isEditing = editingItem?.category === 'word' && editingItem?.id === doc.id;
+    const isDragging = draggedItem?.fileId === doc.id;
+
+    return (
+      <div
+        key={doc.id}
+        role="button"
+        tabIndex={0}
+        draggable={!isEditing}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: doc.id, category: 'word' }));
+          e.dataTransfer.effectAllowed = 'move';
+          setDraggedItem({ fileId: doc.id, category: 'word' });
+        }}
+        onDragEnd={() => {
+          setDraggedItem(null);
+          setDragOverTarget(null);
+        }}
+        data-testid={`document-item-${doc.id}`}
+        data-doc-category="word"
+        data-in-folder={isNested ? 'true' : 'false'}
+        onClick={() => {
+          if (!isEditing) {
+            onSelectWordFile?.(doc.id);
+            if (window.innerWidth < 1024) onClose?.();
+          }
+        }}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
+            e.preventDefault();
+            onSelectWordFile?.(doc.id);
+            if (window.innerWidth < 1024) onClose?.();
+          }
+        }}
+        className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          isDragging ? 'opacity-40 ring-2 ring-indigo-400' : ''
+        } ${
+          isActive
+            ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-100 font-medium border border-indigo-200 dark:border-indigo-800 shadow-2xs ring-1 ring-indigo-500/20'
+            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+          <FileText className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-500/70'}`} />
+          <div className="min-w-0 flex-1">
+            {isEditing ? (
+              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <input 
+                  ref={editInputRef}
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={handleKeyDownRename}
+                  className="w-full text-xs bg-white dark:bg-slate-900 border border-indigo-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={submitRename}
+                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="text-xs truncate font-medium">{doc.name}</div>
+                <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                  <span>.docx</span>
+                  <span>·</span>
+                  <span>{formatRelativeTime(doc.updatedAt)}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {!isEditing && (
+          <div className={`flex items-center gap-0.5 transition-opacity ${
+            isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+          }`}>
+            <button
+              type="button"
+              onClick={(e) => startRename(e, 'word', doc.id, doc.name)}
+              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+              title="Rename"
+              aria-label="Rename document"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            {onDeleteWordFile && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteWordFile(doc.id);
+                }}
+                className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                title="Delete Document"
+                aria-label="Delete document"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render individual PowerPoint presentation item
+  const renderPptxCard = (deck, isNested = false) => {
+    const isActive = activeTool === 'pptx' && deck.id === activePptxId;
+    const isEditing = editingItem?.category === 'pptx' && editingItem?.id === deck.id;
+    const isDragging = draggedItem?.fileId === deck.id;
+
+    return (
+      <div
+        key={deck.id}
+        role="button"
+        tabIndex={0}
+        draggable={!isEditing}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: deck.id, category: 'pptx' }));
+          e.dataTransfer.effectAllowed = 'move';
+          setDraggedItem({ fileId: deck.id, category: 'pptx' });
+        }}
+        onDragEnd={() => {
+          setDraggedItem(null);
+          setDragOverTarget(null);
+        }}
+        data-testid={`document-item-${deck.id}`}
+        data-doc-category="pptx"
+        data-in-folder={isNested ? 'true' : 'false'}
+        onClick={() => {
+          if (!isEditing) {
+            onSelectPptxFile?.(deck.id);
+            if (window.innerWidth < 1024) onClose?.();
+          }
+        }}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
+            e.preventDefault();
+            onSelectPptxFile?.(deck.id);
+            if (window.innerWidth < 1024) onClose?.();
+          }
+        }}
+        className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+          isDragging ? 'opacity-40 ring-2 ring-amber-400' : ''
+        } ${
+          isActive
+            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 font-medium border border-amber-200 dark:border-amber-800 shadow-2xs ring-1 ring-amber-500/20'
+            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+          <Presentation className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500/70'}`} />
+          <div className="min-w-0 flex-1">
+            {isEditing ? (
+              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <input 
+                  ref={editInputRef}
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={handleKeyDownRename}
+                  className="w-full text-xs bg-white dark:bg-slate-900 border border-amber-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={submitRename}
+                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="text-xs truncate font-medium">{deck.name}</div>
+                <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                  <span>{deck.slideCount || '?'} Slides</span>
+                  <span>·</span>
+                  <span>{formatRelativeTime(deck.updatedAt)}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {!isEditing && (
+          <div className={`flex items-center gap-0.5 transition-opacity ${
+            isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+          }`}>
+            <button
+              type="button"
+              onClick={(e) => startRename(e, 'pptx', deck.id, deck.name)}
+              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+              title="Rename"
+              aria-label="Rename presentation"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            {onDeletePptxFile && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeletePptxFile(deck.id);
+                }}
+                className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                title="Delete Presentation"
+                aria-label="Delete presentation"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render individual PDF document item
+  const renderPdfCard = (file, isNested = false) => {
+    const isPdfActive = activeTool === 'pdf' && (activePdfId === file.id || activePdfId === file.name);
+    const isEditing = editingItem?.category === 'pdf' && editingItem?.id === file.id;
+    const isDragging = draggedItem?.fileId === file.id;
+
+    return (
+      <div
+        key={file.id}
+        role="button"
+        tabIndex={0}
+        draggable={!isEditing}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: file.id, category: 'pdf' }));
+          e.dataTransfer.effectAllowed = 'move';
+          setDraggedItem({ fileId: file.id, category: 'pdf' });
+        }}
+        onDragEnd={() => {
+          setDraggedItem(null);
+          setDragOverTarget(null);
+        }}
+        data-testid={`document-item-${file.id}`}
+        data-doc-category="pdf"
+        data-in-folder={isNested ? 'true' : 'false'}
+        onClick={() => {
+          if (!isEditing) {
+            onSelectPdfFile?.(file.id);
+            if (window.innerWidth < 1024) onClose?.();
+          }
+        }}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
+            e.preventDefault();
+            onSelectPdfFile?.(file.id);
+            if (window.innerWidth < 1024) onClose?.();
+          }
+        }}
+        className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
+          isDragging ? 'opacity-40 ring-2 ring-red-400' : ''
+        } ${
+          isPdfActive
+            ? 'bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-100 font-medium border border-red-200 dark:border-red-800 shadow-2xs ring-1 ring-red-500/20'
+            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
+          <FileText className={`w-3.5 h-3.5 shrink-0 ${isPdfActive ? 'text-red-600 dark:text-red-400' : 'text-red-500/70'}`} />
+          <div className="min-w-0 flex-1">
+            {isEditing ? (
+              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <input 
+                  ref={editInputRef}
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={handleKeyDownRename}
+                  className="w-full text-xs bg-white dark:bg-slate-900 border border-red-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={submitRename}
+                  className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="text-xs truncate font-medium">{file.name}</div>
+                <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                  {file.numPages && <span>{file.numPages} {file.numPages === 1 ? 'Page' : 'Pages'} · </span>}
+                  <span>{formatRelativeTime(file.updatedAt)}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {!isEditing && (
+          <div className={`flex items-center gap-0.5 transition-opacity ${
+            isPdfActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+          }`}>
+            {onRenamePdfFile && (
+              <button
+                type="button"
+                onClick={(e) => startRename(e, 'pdf', file.id, file.name)}
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+                title="Rename"
+                aria-label="Rename PDF"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            )}
+            {onDeletePdfFile && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeletePdfFile(file.id);
+                }}
+                className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                title="Remove PDF"
+                aria-label="Remove PDF"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -385,552 +1172,280 @@ export default function FileSidebar({
         <div className="flex-1 overflow-y-auto p-2.5 space-y-4 custom-scrollbar">
           
           {/* SECTION 1: MARKDOWN FILES */}
-          {(activeCategory === 'all' || activeCategory === 'markdown') && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                <button 
-                  onClick={() => toggleSection('markdown')}
-                  className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
-                >
-                  {collapsedSections.markdown ? (
-                    <ChevronRight className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-extrabold">
-                    <FileCode className="w-3.5 h-3.5" />
-                    Markdown
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400 font-normal">
-                    ({filteredMd.length})
-                  </span>
-                </button>
+          {(activeCategory === 'all' || activeCategory === 'markdown') && (() => {
+            const categoryFolders = folders.filter(f => f.category === 'markdown');
+            const rootFiles = filteredMd.filter(f => !f.folderId || !categoryFolders.some(fol => fol.id === f.folderId));
 
-                <button
-                  onClick={() => {
-                    resolvedNewMd?.();
-                    if (window.innerWidth < 1024) onClose?.();
-                  }}
-                  className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition-colors"
-                  title="New .md Document"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  <button 
+                    onClick={() => toggleSection('markdown')}
+                    className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                  >
+                    {collapsedSections.markdown ? (
+                      <ChevronRight className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                    <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 font-extrabold">
+                      <FileCode className="w-3.5 h-3.5" />
+                      Markdown
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400 font-normal">
+                      ({filteredMd.length})
+                    </span>
+                  </button>
 
-              {!collapsedSections.markdown && (
-                <div className="space-y-0.5">
-                  {filteredMd.length === 0 ? (
-                    <div className="px-3 py-2 text-[11px] text-slate-400 italic">No markdown files</div>
-                  ) : (
-                    filteredMd.map((file) => {
-                      const isActive = activeTool === 'markdown' && file.id === resolvedActiveMdId;
-                      const isEditing = editingItem?.category === 'markdown' && editingItem?.id === file.id;
-
-                      return (
-                        <div
-                          key={file.id}
-                          role="button"
-                          tabIndex={0}
-                          data-testid={`document-item-${file.id}`}
-                          data-doc-category="markdown"
-                          onClick={() => {
-                            if (!isEditing) {
-                              resolvedSelectMd?.(file.id);
-                              if (window.innerWidth < 1024) onClose?.();
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
-                              e.preventDefault();
-                              resolvedSelectMd?.(file.id);
-                              if (window.innerWidth < 1024) onClose?.();
-                            }
-                          }}
-                          className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                            isActive
-                              ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-100 font-medium border border-blue-200 dark:border-blue-800 shadow-2xs ring-1 ring-blue-500/20'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-                            <FileCode className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-blue-500/70'}`} />
-                            <div className="min-w-0 flex-1">
-                              {isEditing ? (
-                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                  <input 
-                                    ref={editInputRef}
-                                    type="text"
-                                    value={editName}
-                                    onChange={(e) => setEditName(e.target.value)}
-                                    onKeyDown={handleKeyDownRename}
-                                    className="w-full text-xs bg-white dark:bg-slate-900 border border-blue-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
-                                  />
-                                  <button
-                                    onClick={submitRename}
-                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
-                                  >
-                                    <Check className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="text-xs truncate font-medium">{file.name}</div>
-                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                                    <span>{formatWordCount(file.content)}</span>
-                                    <span>·</span>
-                                    <span>{formatRelativeTime(file.updatedAt)}</span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-
-                          {!isEditing && (
-                            <div className={`flex items-center gap-0.5 transition-opacity ${
-                              isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                            }`}>
-                              <button
-                                onClick={(e) => startRename(e, 'markdown', file.id, file.name)}
-                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
-                                title="Rename"
-                                aria-label="Rename document"
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  downloadMarkdown(file.content, file.name);
-                                }}
-                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
-                                title="Download"
-                                aria-label="Download document"
-                              >
-                                <Download className="w-3 h-3" />
-                              </button>
-                              {resolvedDeleteMd && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    resolvedDeleteMd(file.id);
-                                  }}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                                  title="Delete Document"
-                                  aria-label="Delete document"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStartCreateFolder('markdown')}
+                      className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition-colors"
+                      title="Create Markdown Folder"
+                      aria-label="Add folder to Markdown"
+                      data-testid="add-folder-markdown-btn"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resolvedNewMd?.();
+                        if (window.innerWidth < 1024) onClose?.();
+                      }}
+                      className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition-colors"
+                      title="New .md Document"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                {!collapsedSections.markdown && (
+                  <div className="space-y-0.5">
+                    {renderInlineCreateFolder('markdown', 'text-blue-600 dark:text-blue-400')}
+                    
+                    {categoryFolders.map(folder => {
+                      const folderFiles = filteredMd.filter(f => f.folderId === folder.id);
+                      return renderFolderRow(folder, folderFiles, renderMarkdownCard, 'text-blue-500');
+                    })}
+
+                    {rootFiles.map(file => renderMarkdownCard(file, false))}
+
+                    {categoryFolders.length === 0 && rootFiles.length === 0 && !creatingFolderCategory && (
+                      <div className="px-3 py-2 text-[11px] text-slate-400 italic">No markdown files</div>
+                    )}
+
+                    {renderRootDropzone('markdown')}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* SECTION 2: WORD DOCUMENTS */}
-          {(activeCategory === 'all' || activeCategory === 'word') && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                <button 
-                  onClick={() => toggleSection('word')}
-                  className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
-                >
-                  {collapsedSections.word ? (
-                    <ChevronRight className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                  <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-extrabold">
-                    <FileText className="w-3.5 h-3.5" />
-                    Word Docs
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400 font-normal">
-                    ({filteredWord.length})
-                  </span>
-                </button>
+          {(activeCategory === 'all' || activeCategory === 'word') && (() => {
+            const categoryFolders = folders.filter(f => f.category === 'word');
+            const rootFiles = filteredWord.filter(f => !f.folderId || !categoryFolders.some(fol => fol.id === f.folderId));
 
-                <button
-                  onClick={() => docxInputRef.current?.click()}
-                  className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded transition-colors"
-                  title="Import .docx File"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  <button 
+                    onClick={() => toggleSection('word')}
+                    className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                  >
+                    {collapsedSections.word ? (
+                      <ChevronRight className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                    <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-extrabold">
+                      <FileText className="w-3.5 h-3.5" />
+                      Word Docs
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400 font-normal">
+                      ({filteredWord.length})
+                    </span>
+                  </button>
 
-              {!collapsedSections.word && (
-                <div className="space-y-0.5">
-                  {filteredWord.length === 0 ? (
-                    <div className="px-3 py-2 text-[11px] text-slate-400 italic">No Word documents</div>
-                  ) : (
-                    filteredWord.map((doc) => {
-                      const isActive = activeTool === 'word' && doc.id === activeWordId;
-                      const isEditing = editingItem?.category === 'word' && editingItem?.id === doc.id;
-
-                      return (
-                        <div
-                          key={doc.id}
-                          role="button"
-                          tabIndex={0}
-                          data-testid={`document-item-${doc.id}`}
-                          data-doc-category="word"
-                          onClick={() => {
-                            if (!isEditing) {
-                              onSelectWordFile?.(doc.id);
-                              if (window.innerWidth < 1024) onClose?.();
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
-                              e.preventDefault();
-                              onSelectWordFile?.(doc.id);
-                              if (window.innerWidth < 1024) onClose?.();
-                            }
-                          }}
-                          className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                            isActive
-                              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-100 font-medium border border-indigo-200 dark:border-indigo-800 shadow-2xs ring-1 ring-indigo-500/20'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-                            <FileText className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-500/70'}`} />
-                            <div className="min-w-0 flex-1">
-                              {isEditing ? (
-                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                  <input 
-                                    ref={editInputRef}
-                                    type="text"
-                                    value={editName}
-                                    onChange={(e) => setEditName(e.target.value)}
-                                    onKeyDown={handleKeyDownRename}
-                                    className="w-full text-xs bg-white dark:bg-slate-900 border border-indigo-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
-                                  />
-                                  <button
-                                    onClick={submitRename}
-                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
-                                  >
-                                    <Check className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="text-xs truncate font-medium">{doc.name}</div>
-                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                                    <span>.docx</span>
-                                    <span>·</span>
-                                    <span>{formatRelativeTime(doc.updatedAt)}</span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-
-                          {!isEditing && (
-                            <div className={`flex items-center gap-0.5 transition-opacity ${
-                              isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                            }`}>
-                              <button
-                                onClick={(e) => startRename(e, 'word', doc.id, doc.name)}
-                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
-                                title="Rename"
-                                aria-label="Rename document"
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </button>
-                              {onDeleteWordFile && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDeleteWordFile(doc.id);
-                                  }}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                                  title="Delete Document"
-                                  aria-label="Delete document"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStartCreateFolder('word')}
+                      className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded transition-colors"
+                      title="Create Word Folder"
+                      aria-label="Add folder to Word Docs"
+                      data-testid="add-folder-word-btn"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => docxInputRef.current?.click()}
+                      className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded transition-colors"
+                      title="Import .docx File"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                {!collapsedSections.word && (
+                  <div className="space-y-0.5">
+                    {renderInlineCreateFolder('word', 'text-indigo-600 dark:text-indigo-400')}
+
+                    {categoryFolders.map(folder => {
+                      const folderFiles = filteredWord.filter(f => f.folderId === folder.id);
+                      return renderFolderRow(folder, folderFiles, renderWordCard, 'text-indigo-500');
+                    })}
+
+                    {rootFiles.map(doc => renderWordCard(doc, false))}
+
+                    {categoryFolders.length === 0 && rootFiles.length === 0 && !creatingFolderCategory && (
+                      <div className="px-3 py-2 text-[11px] text-slate-400 italic">No Word documents</div>
+                    )}
+
+                    {renderRootDropzone('word')}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* SECTION 3: POWERPOINT PRESENTATIONS */}
-          {(activeCategory === 'all' || activeCategory === 'pptx') && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                <button 
-                  onClick={() => toggleSection('pptx')}
-                  className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
-                >
-                  {collapsedSections.pptx ? (
-                    <ChevronRight className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-extrabold">
-                    <Presentation className="w-3.5 h-3.5" />
-                    PowerPoint Decks
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400 font-normal">
-                    ({filteredPptx.length})
-                  </span>
-                </button>
+          {(activeCategory === 'all' || activeCategory === 'pptx') && (() => {
+            const categoryFolders = folders.filter(f => f.category === 'pptx');
+            const rootFiles = filteredPptx.filter(f => !f.folderId || !categoryFolders.some(fol => fol.id === f.folderId));
 
-                <button
-                  onClick={() => pptxInputRef.current?.click()}
-                  className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded transition-colors"
-                  title="Import .pptx File"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  <button 
+                    onClick={() => toggleSection('pptx')}
+                    className="flex items-center gap-1.5 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                  >
+                    {collapsedSections.pptx ? (
+                      <ChevronRight className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-extrabold">
+                      <Presentation className="w-3.5 h-3.5" />
+                      PowerPoint Decks
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400 font-normal">
+                      ({filteredPptx.length})
+                    </span>
+                  </button>
 
-              {!collapsedSections.pptx && (
-                <div className="space-y-0.5">
-                  {filteredPptx.length === 0 ? (
-                    <div className="px-3 py-2 text-[11px] text-slate-400 italic">No PowerPoint decks</div>
-                  ) : (
-                    filteredPptx.map((deck) => {
-                      const isActive = activeTool === 'pptx' && deck.id === activePptxId;
-                      const isEditing = editingItem?.category === 'pptx' && editingItem?.id === deck.id;
-
-                      return (
-                        <div
-                          key={deck.id}
-                          role="button"
-                          tabIndex={0}
-                          data-testid={`document-item-${deck.id}`}
-                          data-doc-category="pptx"
-                          onClick={() => {
-                            if (!isEditing) {
-                              onSelectPptxFile?.(deck.id);
-                              if (window.innerWidth < 1024) onClose?.();
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
-                              e.preventDefault();
-                              onSelectPptxFile?.(deck.id);
-                              if (window.innerWidth < 1024) onClose?.();
-                            }
-                          }}
-                          className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
-                            isActive
-                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 font-medium border border-amber-200 dark:border-amber-800 shadow-2xs ring-1 ring-amber-500/20'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-                            <Presentation className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500/70'}`} />
-                            <div className="min-w-0 flex-1">
-                              {isEditing ? (
-                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                  <input 
-                                    ref={editInputRef}
-                                    type="text"
-                                    value={editName}
-                                    onChange={(e) => setEditName(e.target.value)}
-                                    onKeyDown={handleKeyDownRename}
-                                    className="w-full text-xs bg-white dark:bg-slate-900 border border-amber-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
-                                  />
-                                  <button
-                                    onClick={submitRename}
-                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
-                                  >
-                                    <Check className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="text-xs truncate font-medium">{deck.name}</div>
-                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                                    <span>{deck.slideCount || '?'} Slides</span>
-                                    <span>·</span>
-                                    <span>{formatRelativeTime(deck.updatedAt)}</span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-
-                          {!isEditing && (
-                            <div className={`flex items-center gap-0.5 transition-opacity ${
-                              isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                            }`}>
-                              <button
-                                onClick={(e) => startRename(e, 'pptx', deck.id, deck.name)}
-                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
-                                title="Rename"
-                                aria-label="Rename presentation"
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </button>
-                              {onDeletePptxFile && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDeletePptxFile(deck.id);
-                                  }}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                                  title="Delete Presentation"
-                                  aria-label="Delete presentation"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStartCreateFolder('pptx')}
+                      className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded transition-colors"
+                      title="Create PowerPoint Folder"
+                      aria-label="Add folder to PowerPoint"
+                      data-testid="add-folder-pptx-btn"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => pptxInputRef.current?.click()}
+                      className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded transition-colors"
+                      title="Import .pptx File"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                {!collapsedSections.pptx && (
+                  <div className="space-y-0.5">
+                    {renderInlineCreateFolder('pptx', 'text-amber-600 dark:text-amber-400')}
+
+                    {categoryFolders.map(folder => {
+                      const folderFiles = filteredPptx.filter(f => f.folderId === folder.id);
+                      return renderFolderRow(folder, folderFiles, renderPptxCard, 'text-amber-500');
+                    })}
+
+                    {rootFiles.map(deck => renderPptxCard(deck, false))}
+
+                    {categoryFolders.length === 0 && rootFiles.length === 0 && !creatingFolderCategory && (
+                      <div className="px-3 py-2 text-[11px] text-slate-400 italic">No PowerPoint decks</div>
+                    )}
+
+                    {renderRootDropzone('pptx')}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* SECTION 4: PDF DOCUMENTS */}
-          {(activeCategory === 'all' || activeCategory === 'pdf') && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between px-2 py-1 text-slate-400 dark:text-slate-500">
-                <button
-                  onClick={() => toggleSection('pdf')}
-                  className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                >
-                  {collapsedSections.pdf ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  <span className="text-red-600 dark:text-red-400 font-extrabold">PDF</span>
-                  <span>({filteredPdf.length})</span>
-                </button>
+          {(activeCategory === 'all' || activeCategory === 'pdf') && (() => {
+            const categoryFolders = folders.filter(f => f.category === 'pdf');
+            const rootFiles = filteredPdf.filter(f => !f.folderId || !categoryFolders.some(fol => fol.id === f.folderId));
 
-                <button
-                  onClick={() => pdfInputRef.current?.click()}
-                  className="p-1 hover:bg-slate-200/80 dark:hover:bg-slate-800 rounded text-slate-500 hover:text-red-600 transition-colors"
-                  title="Open PDF File"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            return (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between px-2 py-1 text-slate-400 dark:text-slate-500">
+                  <button
+                    onClick={() => toggleSection('pdf')}
+                    className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                  >
+                    {collapsedSections.pdf ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    <span className="text-red-600 dark:text-red-400 font-extrabold">PDF</span>
+                    <span className="font-mono text-[10px] text-slate-400 font-normal">({filteredPdf.length})</span>
+                  </button>
 
-              {!collapsedSections.pdf && (
-                <div className="space-y-0.5">
-                  {filteredPdf.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-slate-400 italic">
-                      {filter ? 'No matching PDF files' : 'No PDF files opened yet'}
-                    </div>
-                  ) : (
-                    filteredPdf.map(file => {
-                      const isPdfActive = activeTool === 'pdf' && (activePdfId === file.id || activePdfId === file.name);
-                      const isEditing = editingItem?.category === 'pdf' && editingItem?.id === file.id;
-
-                      return (
-                        <div
-                          key={file.id}
-                          role="button"
-                          tabIndex={0}
-                          data-testid={`document-item-${file.id}`}
-                          data-doc-category="pdf"
-                          onClick={() => {
-                            if (!isEditing) {
-                              onSelectPdfFile?.(file.id);
-                              if (window.innerWidth < 1024) onClose?.();
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
-                              e.preventDefault();
-                              onSelectPdfFile?.(file.id);
-                              if (window.innerWidth < 1024) onClose?.();
-                            }
-                          }}
-                          className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                            isPdfActive
-                              ? 'bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-100 font-medium border border-red-200 dark:border-red-800 shadow-2xs ring-1 ring-red-500/20'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-                            <FileText className={`w-3.5 h-3.5 shrink-0 ${isPdfActive ? 'text-red-600 dark:text-red-400' : 'text-red-500/70'}`} />
-                            <div className="min-w-0 flex-1">
-                              {isEditing ? (
-                                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                  <input 
-                                    ref={editInputRef}
-                                    type="text"
-                                    value={editName}
-                                    onChange={(e) => setEditName(e.target.value)}
-                                    onKeyDown={handleKeyDownRename}
-                                    className="w-full text-xs bg-white dark:bg-slate-900 border border-red-500 rounded px-1.5 py-0.5 outline-none text-slate-900 dark:text-white"
-                                  />
-                                  <button
-                                    onClick={submitRename}
-                                    className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-emerald-600"
-                                  >
-                                    <Check className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="text-xs truncate font-medium">{file.name}</div>
-                                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                                    {file.numPages && <span>{file.numPages} {file.numPages === 1 ? 'Page' : 'Pages'} · </span>}
-                                    <span>{formatRelativeTime(file.updatedAt)}</span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-
-                          {!isEditing && (
-                            <div className={`flex items-center gap-0.5 transition-opacity ${
-                              isPdfActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                            }`}>
-                              {onRenamePdfFile && (
-                                <button
-                                  onClick={(e) => startRename(e, 'pdf', file.id, file.name)}
-                                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
-                                  title="Rename"
-                                  aria-label="Rename PDF"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </button>
-                              )}
-                              {onDeletePdfFile && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDeletePdfFile(file.id);
-                                  }}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                                  title="Remove PDF"
-                                  aria-label="Remove PDF"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleStartCreateFolder('pdf')}
+                      className="p-1 hover:bg-slate-200/80 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-red-600 transition-colors"
+                      title="Create PDF Folder"
+                      aria-label="Add folder to PDF"
+                      data-testid="add-folder-pdf-btn"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => pdfInputRef.current?.click()}
+                      className="p-1 hover:bg-slate-200/80 dark:hover:bg-slate-800 rounded text-slate-500 hover:text-red-600 transition-colors"
+                      title="Open PDF File"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                {!collapsedSections.pdf && (
+                  <div className="space-y-0.5">
+                    {renderInlineCreateFolder('pdf', 'text-red-600 dark:text-red-400')}
+
+                    {categoryFolders.map(folder => {
+                      const folderFiles = filteredPdf.filter(f => f.folderId === folder.id);
+                      return renderFolderRow(folder, folderFiles, renderPdfCard, 'text-red-500');
+                    })}
+
+                    {rootFiles.map(file => renderPdfCard(file, false))}
+
+                    {categoryFolders.length === 0 && rootFiles.length === 0 && !creatingFolderCategory && (
+                      <div className="px-3 py-2 text-xs text-slate-400 italic">
+                        {filter ? 'No matching PDF files' : 'No PDF files opened yet'}
+                      </div>
+                    )}
+
+                    {renderRootDropzone('pdf')}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
         </div>
 
