@@ -696,11 +696,11 @@ export default function WordViewer({
       )}
 
       {/* Document Workspace */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center items-start custom-scrollbar">
         <article
           id="preview-paper"
           ref={paperRef}
-          className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-xl shadow-lg p-8 sm:p-14 transition-colors min-h-[800px]"
+          className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-xl sm:rounded-2xl shadow-lg p-6 sm:p-12 md:p-14 transition-colors min-h-[800px] h-fit mb-8 sm:mb-12"
         >
           {isPlayground && (
             <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 select-none">
