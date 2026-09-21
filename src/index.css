@@ -249,7 +249,7 @@
   box-sizing: border-box !important;
 }
 
-.exporting-pdf *:not([style*="color"]):not(mark):not(.annotated-color):not(a) {
+.exporting-pdf *:not([style*="color"]):not(mark):not(.annotated-color):not(a):not(.code-block-wrapper):not(.code-block-wrapper *):not(.mermaid-container svg *):not(.katex *) {
   color: #0f172a !important;
 }
 
@@ -449,7 +449,7 @@ mark u,
 mark s,
 mark del,
 mark code,
-mark span:not(.annotated-comment):not(.annotated-color),
+mark span:not(.annotated-comment):not(.annotated-color):not(.katex *),
 .annotated-mark strong,
 .annotated-mark b,
 .annotated-mark em,
@@ -458,7 +458,7 @@ mark span:not(.annotated-comment):not(.annotated-color),
 .annotated-mark s,
 .annotated-mark del,
 .annotated-mark code,
-.annotated-mark span:not(.annotated-comment):not(.annotated-color) {
+.annotated-mark span:not(.annotated-comment):not(.annotated-color):not(.katex *) {
   background: transparent !important;
   background-color: transparent !important;
   box-shadow: none !important;
@@ -466,6 +466,39 @@ mark span:not(.annotated-comment):not(.annotated-color),
   padding-top: 0 !important;
   padding-bottom: 0 !important;
   line-height: inherit !important;
+}
+
+/* Preserve subscript, superscript, and math positions inside highlights */
+mark sup,
+.annotated-mark sup {
+  vertical-align: super !important;
+  font-size: 0.75em !important;
+  line-height: 0 !important;
+  position: relative !important;
+  display: inline !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+mark sub,
+.annotated-mark sub {
+  vertical-align: sub !important;
+  font-size: 0.75em !important;
+  line-height: 0 !important;
+  position: relative !important;
+  display: inline !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+mark .katex,
+.annotated-mark .katex {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
 }
 
 /* Seamless connection when marks are adjacent siblings */
@@ -707,6 +740,21 @@ del {
   overflow-wrap: break-word !important;
 }
 
+.exporting-pdf th strong,
+.exporting-pdf td strong {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+.exporting-pdf td code {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  padding: 1px 4px !important;
+  border-radius: 3px !important;
+  font-size: 10px !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
 .exporting-pdf tr:nth-child(even) td {
   background-color: #f8fafc !important;
 }
@@ -756,7 +804,7 @@ del {
   box-shadow: none !important;
   border: 1px solid #334155 !important;
   border-radius: 8px !important;
-  margin: 1rem 0 !important;
+  margin: 1.2rem 0 !important;
   break-inside: avoid !important;
   page-break-inside: avoid !important;
   max-width: 100% !important;
@@ -768,14 +816,81 @@ del {
   border-bottom: 1px solid #1e293b !important;
   padding: 6px 12px !important;
   font-size: 10px !important;
+  color: #94a3b8 !important;
+}
+
+.exporting-pdf .code-header span {
+  color: #94a3b8 !important;
+}
+
+.exporting-pdf .code-block-wrapper pre {
+  background-color: transparent !important;
+  color: #f8fafc !important;
+  padding: 12px 14px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  white-space: pre !important;
 }
 
 .exporting-pdf .code-block-wrapper pre,
 .exporting-pdf .code-block-wrapper code {
-  white-space: pre-wrap !important;
-  word-break: break-word !important;
-  font-size: 11px !important;
-  line-height: 1.55 !important;
+  color: #f8fafc !important;
+  font-size: 10.5px !important;
+  line-height: 1.48 !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  white-space: pre !important;
+}
+
+.exporting-pdf .code-block-wrapper code {
+  display: block !important;
+  background-color: transparent !important;
+}
+
+/* Syntax Highlighting inside code blocks for exported PDFs */
+.exporting-pdf .code-block-wrapper .hljs-keyword,
+.exporting-pdf .code-block-wrapper .hljs-selector-tag,
+.exporting-pdf .code-block-wrapper .hljs-subst {
+  color: #ff7b72 !important;
+}
+
+.exporting-pdf .code-block-wrapper .hljs-string,
+.exporting-pdf .code-block-wrapper .hljs-title,
+.exporting-pdf .code-block-wrapper .hljs-section,
+.exporting-pdf .code-block-wrapper .hljs-attribute,
+.exporting-pdf .code-block-wrapper .hljs-literal,
+.exporting-pdf .code-block-wrapper .hljs-template-tag,
+.exporting-pdf .code-block-wrapper .hljs-template-variable,
+.exporting-pdf .code-block-wrapper .hljs-type,
+.exporting-pdf .code-block-wrapper .hljs-addition {
+  color: #7ee787 !important;
+}
+
+.exporting-pdf .code-block-wrapper .hljs-comment,
+.exporting-pdf .code-block-wrapper .hljs-quote,
+.exporting-pdf .code-block-wrapper .hljs-deletion {
+  color: #8b949e !important;
+}
+
+.exporting-pdf .code-block-wrapper .hljs-number,
+.exporting-pdf .code-block-wrapper .hljs-regexp,
+.exporting-pdf .code-block-wrapper .hljs-link {
+  color: #79c0ff !important;
+}
+
+.exporting-pdf .code-block-wrapper .hljs-meta,
+.exporting-pdf .code-block-wrapper .hljs-symbol,
+.exporting-pdf .code-block-wrapper .hljs-bullet {
+  color: #ffa657 !important;
+}
+
+/* Inline code styling outside pre */
+.exporting-pdf :not(pre) > code {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  padding: 0.15em 0.35em !important;
+  border-radius: 4px !important;
+  font-size: 0.88em !important;
+  border: 1px solid #e2e8f0 !important;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }
 
@@ -811,11 +926,18 @@ del {
   overflow: visible !important;
 }
 
+.exporting-pdf .mermaid-container svg foreignObject {
+  overflow: visible !important;
+}
+
 .exporting-pdf .mermaid-container svg text,
-.exporting-pdf .mermaid-container svg span {
+.exporting-pdf .mermaid-container svg span,
+.exporting-pdf .mermaid-container svg .nodeLabel,
+.exporting-pdf .mermaid-container svg foreignObject div {
   fill: #0f172a !important;
   color: #0f172a !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  line-height: 1.25 !important;
 }
 
 .exporting-pdf .mermaid-source {

@@ -61,12 +61,17 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
     }
   }
 
-  // 3. Transfer rendered SVG dimensions (Mermaid diagrams) from live DOM to clone
-  const liveSvgs = element.querySelectorAll('svg');
-  const cloneSvgs = clone.querySelectorAll('svg');
-  liveSvgs.forEach((liveSvg, idx) => {
-    const cloneSvg = cloneSvgs[idx];
-    if (cloneSvg) {
+  // 3. Transfer rendered SVG dimensions and viewBox (Mermaid diagrams) from live DOM to clone
+  const liveMermaidContainers = element.querySelectorAll('.mermaid-container');
+  const cloneMermaidContainers = clone.querySelectorAll('.mermaid-container');
+  liveMermaidContainers.forEach((liveContainer, idx) => {
+    const cloneContainer = cloneMermaidContainers[idx];
+    if (!cloneContainer) return;
+    const liveSvg = liveContainer.querySelector('svg');
+    const cloneSvg = cloneContainer.querySelector('svg');
+    if (liveSvg && cloneSvg) {
+      const viewBox = liveSvg.getAttribute('viewBox');
+      if (viewBox) cloneSvg.setAttribute('viewBox', viewBox);
       const rect = liveSvg.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
         cloneSvg.setAttribute('width', String(Math.round(rect.width)));
@@ -74,6 +79,21 @@ export async function downloadDirectPdf(element, filename = 'document.pdf') {
         cloneSvg.style.width = `${Math.round(rect.width)}px`;
         cloneSvg.style.maxWidth = '100%';
         cloneSvg.style.height = 'auto';
+      }
+    }
+  });
+
+  // Ensure wide code blocks and ASCII mindmaps fit neatly across the printable PDF page
+  clone.querySelectorAll('.code-block-wrapper pre').forEach(pre => {
+    const code = pre.querySelector('code');
+    if (code) {
+      const lines = (code.textContent || '').split('\n');
+      const maxLineLen = lines.reduce((max, l) => Math.max(max, l.length), 0);
+      if (maxLineLen > 82) {
+        const scale = Math.max(0.68, Math.min(1, 82 / maxLineLen));
+        const newFontSize = Math.max(7.5, Math.round(10.5 * scale * 10) / 10);
+        pre.style.fontSize = `${newFontSize}px`;
+        code.style.fontSize = `${newFontSize}px`;
       }
     }
   });

@@ -415,6 +415,7 @@ export default function WordViewer({
     }
 
     const created = applyFormattingToRange(paper, trimmed, { type: 'highlight', color });
+    consolidateMarks(paper);
     const valid = (created || []).filter(el => paper.contains(el));
     if (valid.length > 0) {
       const sel = window.getSelection();
@@ -441,6 +442,7 @@ export default function WordViewer({
 
     setHasEdits(true);
     applyFormattingToRange(paper, trimmed, { type: 'color', color });
+    consolidateMarks(paper);
     pushHistorySnapshot();
     triggerAutoSave(true, 300);
   };

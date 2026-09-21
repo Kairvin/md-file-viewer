@@ -175,7 +175,8 @@ export function parseMarkdown(markdownText) {
     if (header && header.length) {
       headerHtml = '<thead><tr>' + header.map(cell => {
         const alignClass = cell.align ? `text-${cell.align}` : 'text-left';
-        return `<th class="px-4 py-3 ${alignClass} font-semibold border-b border-slate-300 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/70">${cell.text}</th>`;
+        const content = cell.tokens ? this.parser.parseInline(cell.tokens) : cell.text;
+        return `<th class="px-4 py-3 ${alignClass} font-semibold border-b border-slate-300 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/70">${content}</th>`;
       }).join('') + '</tr></thead>';
     }
 
@@ -186,7 +187,8 @@ export function parseMarkdown(markdownText) {
         return `<tr class="${rowBg} hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors">` +
           row.map(cell => {
             const alignClass = cell.align ? `text-${cell.align}` : 'text-left';
-            return `<td class="px-4 py-2.5 ${alignClass} border-b border-slate-200/80 dark:border-slate-800">${cell.text}</td>`;
+            const content = cell.tokens ? this.parser.parseInline(cell.tokens) : cell.text;
+            return `<td class="px-4 py-2.5 ${alignClass} border-b border-slate-200/80 dark:border-slate-800">${content}</td>`;
           }).join('') +
           '</tr>';
       }).join('') + '</tbody>';

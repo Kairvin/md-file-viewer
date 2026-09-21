@@ -38,6 +38,10 @@ export function getTextNodesInRange(root, range) {
         if (!node.nodeValue || node.nodeValue.length === 0) {
           return NodeFilter.FILTER_REJECT;
         }
+        // KaTeX math formulas are atomic structures; do not split their internal text nodes
+        if (node.parentElement && node.parentElement.closest('.katex')) {
+          return NodeFilter.FILTER_REJECT;
+        }
         try {
           return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
         } catch {
@@ -64,8 +68,19 @@ export function trimRangeToText(root, range) {
   const rawText = range.toString();
   if (!rawText.trim()) return null;
 
+  const katexElements = Array.from(root.querySelectorAll('.katex')).filter(el => {
+    try {
+      return range.intersectsNode(el);
+    } catch {
+      return false;
+    }
+  });
+
   const textNodes = getTextNodesInRange(root, range);
-  if (textNodes.length === 0) return null;
+  if (textNodes.length === 0) {
+    if (katexElements.length > 0) return range;
+    return null;
+  }
 
   let firstNode = null;
   let startOffset = 0;
@@ -104,7 +119,10 @@ export function trimRangeToText(root, range) {
     }
   }
 
-  if (!firstNode || !lastNode) return null;
+  if (!firstNode || !lastNode) {
+    if (katexElements.length > 0) return range;
+    return null;
+  }
 
   const trimmedRange = document.createRange();
   try {
@@ -113,6 +131,18 @@ export function trimRangeToText(root, range) {
   } catch (err) {
     return range;
   }
+
+  // Ensure any intersected KaTeX formulas are fully encompassed
+  katexElements.forEach(k => {
+    try {
+      if (trimmedRange.comparePoint(k, 0) > 0) {
+        trimmedRange.setStartBefore(k);
+      }
+      if (trimmedRange.comparePoint(k, k.childNodes.length) < 0) {
+        trimmedRange.setEndAfter(k);
+      }
+    } catch {}
+  });
 
   if (trimmedRange.collapsed || !trimmedRange.toString().trim()) {
     return null;
@@ -184,7 +214,9 @@ export function isInlineFormattingWrapper(el) {
     el.tagName === 'MARK' || 
     el.classList?.contains('annotated-comment') || 
     el.hasAttribute?.('data-comment') ||
-    el.classList?.contains('annotated-mark')
+    el.classList?.contains('annotated-mark') ||
+    el.closest('.katex') ||
+    el.classList?.contains('katex')
   ) {
     return false;
   }
@@ -304,10 +336,60 @@ export function applyFormattingToRange(root, range, options = {}) {
   const { type, color, commentText, inheritedBgColor } = options;
   if (!root || !range) return [];
 
-  const textNodes = getTextNodesInRange(root, range);
-  if (textNodes.length === 0) return [];
-
   const createdElements = [];
+
+  // 1. Process atomic KaTeX math elements intersecting the selection
+  const katexElements = Array.from(root.querySelectorAll('.katex')).filter(el => {
+    try {
+      return range.intersectsNode(el);
+    } catch {
+      return false;
+    }
+  });
+
+  katexElements.forEach(katexEl => {
+    if (type === 'highlight') {
+      const parentMark = katexEl.closest('mark');
+      if (parentMark && root.contains(parentMark)) {
+        parentMark.classList.add('annotated-mark');
+        parentMark.style.backgroundColor = color;
+        parentMark.style.color = 'inherit';
+        createdElements.push(parentMark);
+      } else {
+        const mark = document.createElement('mark');
+        mark.className = 'annotated-mark';
+        mark.style.backgroundColor = color;
+        mark.style.color = 'inherit';
+        katexEl.parentNode.insertBefore(mark, katexEl);
+        mark.appendChild(katexEl);
+        createdElements.push(mark);
+      }
+    } else if (type === 'color') {
+      katexEl.style.color = color;
+      createdElements.push(katexEl);
+    } else if (type === 'comment') {
+      const parentMark = katexEl.closest('mark');
+      if (parentMark && root.contains(parentMark)) {
+        setCommentsOnElement(parentMark, [commentText]);
+        createdElements.push(parentMark);
+      } else {
+        const mark = document.createElement('mark');
+        mark.className = 'annotated-comment';
+        setCommentsOnElement(mark, [commentText]);
+        if (inheritedBgColor && inheritedBgColor !== 'rgb(241, 245, 249)' && inheritedBgColor !== '#f1f5f9') {
+          mark.classList.add('annotated-mark');
+          mark.style.backgroundColor = inheritedBgColor;
+        }
+        katexEl.parentNode.insertBefore(mark, katexEl);
+        mark.appendChild(katexEl);
+        createdElements.push(mark);
+      }
+    }
+  });
+
+  // 2. Process text nodes (which excludes internal KaTeX text nodes)
+  const textNodes = getTextNodesInRange(root, range);
+  if (textNodes.length === 0 && createdElements.length === 0) return [];
 
   textNodes.forEach((node) => {
     const isStartNode = (node === range.startContainer);
