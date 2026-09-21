@@ -85,18 +85,78 @@ export default function FileSidebar({
   // Active category filter tab: 'all' | 'markdown' | 'word' | 'pptx'
   const [activeCategory, setActiveCategory] = useState('all');
   const [filter, setFilter] = useState('');
-  const [collapsedSections, setCollapsedSections] = useState({
-    markdown: false,
-    word: false,
-    pptx: false
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_sections_collapsed');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return {
+            markdown: !!parsed.markdown,
+            word: !!parsed.word,
+            pptx: !!parsed.pptx,
+          };
+        }
+      }
+    } catch {}
+    return {
+      markdown: false,
+      word: false,
+      pptx: false
+    };
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebar_sections_collapsed', JSON.stringify(collapsedSections));
+    } catch (e) {
+      console.warn('Failed to persist collapsed sections:', e);
+    }
+  }, [collapsedSections]);
 
   // Folder creation and organization state
   const [creatingFolderCategory, setCreatingFolderCategory] = useState(null); // 'markdown' | 'word' | 'pptx' | null
   const [newFolderName, setNewFolderName] = useState('');
   const newFolderInputRef = useRef(null);
 
-  const [collapsedFolders, setCollapsedFolders] = useState({});
+  const [collapsedFolders, setCollapsedFolders] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_folders_collapsed');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return {};
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebar_folders_collapsed', JSON.stringify(collapsedFolders));
+    } catch (e) {
+      console.warn('Failed to persist collapsed folders:', e);
+    }
+  }, [collapsedFolders]);
+
+  // Clean up stale folder keys when folders are deleted or modified
+  useEffect(() => {
+    if (!folders || !Array.isArray(folders)) return;
+    const currentFolderIds = new Set(folders.map(f => f.id));
+    setCollapsedFolders(prev => {
+      let changed = false;
+      const next = {};
+      for (const [id, val] of Object.entries(prev)) {
+        if (currentFolderIds.has(id)) {
+          next[id] = val;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [folders]);
   const [editingFolderId, setEditingFolderId] = useState(null);
   const [editingFolderName, setEditingFolderName] = useState('');
   const editFolderInputRef = useRef(null);
