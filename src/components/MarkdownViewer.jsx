@@ -59,94 +59,134 @@ export function getTextNodesInRange(root, range) {
 }
 
 /**
+ * Safely collects atomic elements (.katex) and text nodes intersecting a given range inside root in document order.
+ * Nodes inside KaTeX formulas are excluded since KaTeX math formulas are indivisible atomic structures.
+ */
+export function getAtomicUnitsInRange(root, range) {
+  if (!root || !range || range.collapsed) return [];
+  const units = [];
+
+  const walker = document.createTreeWalker(
+    root,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: (node) => {
+        if (node.parentElement && node.parentElement.closest('.katex')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          if (node.classList?.contains('katex')) {
+            try {
+              return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+            } catch {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          return NodeFilter.FILTER_SKIP;
+        }
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (!node.nodeValue || node.nodeValue.length === 0) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          try {
+            return range.intersectsNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+          } catch {
+            return NodeFilter.FILTER_REJECT;
+          }
+        }
+        return NodeFilter.FILTER_SKIP;
+      }
+    }
+  );
+
+  let curr;
+  while ((curr = walker.nextNode())) {
+    units.push(curr);
+  }
+  return units;
+}
+
+/**
  * Trims leading and trailing whitespace from a Range so that
  * formatting is only applied to actual visible characters and
  * never crosses or extracts block element boundaries (like <li> or <p>).
+ * Handles atomic KaTeX math elements, bold wrappers, and special characters seamlessly.
  */
 export function trimRangeToText(root, range) {
   if (!root || !range || range.collapsed) return null;
-  const rawText = range.toString();
-  if (!rawText.trim()) return null;
 
-  const katexElements = Array.from(root.querySelectorAll('.katex')).filter(el => {
-    try {
-      return range.intersectsNode(el);
-    } catch {
-      return false;
-    }
-  });
+  const items = getAtomicUnitsInRange(root, range);
+  if (items.length === 0) return null;
 
-  const textNodes = getTextNodesInRange(root, range);
-  if (textNodes.length === 0) {
-    if (katexElements.length > 0) return range;
-    return null;
-  }
+  let firstUnit = null;
+  let firstOffset = 0;
 
-  let firstNode = null;
-  let startOffset = 0;
-
-  for (let i = 0; i < textNodes.length; i++) {
-    const node = textNodes[i];
-    const nodeStart = (node === range.startContainer) ? range.startOffset : 0;
-    const nodeEnd = (node === range.endContainer) ? range.endOffset : node.nodeValue.length;
-    if (nodeEnd <= nodeStart) continue;
-
-    const slice = node.nodeValue.substring(nodeStart, nodeEnd);
-    const nonWs = slice.search(/\S/);
-    if (nonWs !== -1) {
-      firstNode = node;
-      startOffset = nodeStart + nonWs;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.nodeType === Node.ELEMENT_NODE) {
+      firstUnit = item;
+      firstOffset = -1;
       break;
+    } else {
+      const nodeStart = (item === range.startContainer) ? range.startOffset : 0;
+      const nodeEnd = (item === range.endContainer) ? range.endOffset : item.nodeValue.length;
+      if (nodeEnd <= nodeStart) continue;
+
+      const slice = item.nodeValue.substring(nodeStart, nodeEnd);
+      const nonWs = slice.search(/\S/);
+      if (nonWs !== -1) {
+        firstUnit = item;
+        firstOffset = nodeStart + nonWs;
+        break;
+      }
     }
   }
 
-  let lastNode = null;
-  let endOffset = 0;
+  let lastUnit = null;
+  let lastOffset = 0;
 
-  for (let i = textNodes.length - 1; i >= 0; i--) {
-    const node = textNodes[i];
-    const nodeStart = (node === range.startContainer) ? range.startOffset : 0;
-    const nodeEnd = (node === range.endContainer) ? range.endOffset : node.nodeValue.length;
-    if (nodeEnd <= nodeStart) continue;
-
-    const slice = node.nodeValue.substring(nodeStart, nodeEnd);
-    const trailingSpacesMatch = slice.match(/\s+$/);
-    const trailingSpacesLen = trailingSpacesMatch ? trailingSpacesMatch[0].length : 0;
-    if (slice.trim().length > 0) {
-      lastNode = node;
-      endOffset = nodeEnd - trailingSpacesLen;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.nodeType === Node.ELEMENT_NODE) {
+      lastUnit = item;
+      lastOffset = -1;
       break;
+    } else {
+      const nodeStart = (item === range.startContainer) ? range.startOffset : 0;
+      const nodeEnd = (item === range.endContainer) ? range.endOffset : item.nodeValue.length;
+      if (nodeEnd <= nodeStart) continue;
+
+      const slice = item.nodeValue.substring(nodeStart, nodeEnd);
+      const trailingSpacesMatch = slice.match(/\s+$/);
+      const trailingSpacesLen = trailingSpacesMatch ? trailingSpacesMatch[0].length : 0;
+      if (slice.trim().length > 0) {
+        lastUnit = item;
+        lastOffset = nodeEnd - trailingSpacesLen;
+        break;
+      }
     }
   }
 
-  if (!firstNode || !lastNode) {
-    if (katexElements.length > 0) return range;
-    return null;
-  }
+  if (!firstUnit || !lastUnit) return null;
 
   const trimmedRange = document.createRange();
   try {
-    trimmedRange.setStart(firstNode, startOffset);
-    trimmedRange.setEnd(lastNode, endOffset);
+    if (firstOffset === -1) {
+      trimmedRange.setStartBefore(firstUnit);
+    } else {
+      trimmedRange.setStart(firstUnit, firstOffset);
+    }
+
+    if (lastOffset === -1) {
+      trimmedRange.setEndAfter(lastUnit);
+    } else {
+      trimmedRange.setEnd(lastUnit, lastOffset);
+    }
   } catch (err) {
     return range;
   }
 
-  // Ensure any intersected KaTeX formulas are fully encompassed
-  katexElements.forEach(k => {
-    try {
-      if (trimmedRange.comparePoint(k, 0) > 0) {
-        trimmedRange.setStartBefore(k);
-      }
-      if (trimmedRange.comparePoint(k, k.childNodes.length) < 0) {
-        trimmedRange.setEndAfter(k);
-      }
-    } catch {}
-  });
-
-  if (trimmedRange.collapsed || !trimmedRange.toString().trim()) {
-    return null;
-  }
+  if (trimmedRange.collapsed) return null;
 
   return trimmedRange;
 }
@@ -334,76 +374,76 @@ export function consolidateMarks(container) {
  */
 export function applyFormattingToRange(root, range, options = {}) {
   const { type, color, commentText, inheritedBgColor } = options;
-  if (!root || !range) return [];
+  if (!root || !range || range.collapsed) return [];
 
   const createdElements = [];
 
-  // 1. Process atomic KaTeX math elements intersecting the selection
-  const katexElements = Array.from(root.querySelectorAll('.katex')).filter(el => {
-    try {
-      return range.intersectsNode(el);
-    } catch {
-      return false;
-    }
-  });
+  // Collect all atomic units (.katex elements and text nodes) intersecting range in document order
+  const items = getAtomicUnitsInRange(root, range);
+  if (items.length === 0) return [];
 
-  katexElements.forEach(katexEl => {
-    if (type === 'highlight') {
-      const parentMark = katexEl.closest('mark');
-      if (parentMark && root.contains(parentMark)) {
-        parentMark.classList.add('annotated-mark');
-        parentMark.style.backgroundColor = color;
-        parentMark.style.color = 'inherit';
-        createdElements.push(parentMark);
-      } else {
-        const mark = document.createElement('mark');
-        mark.className = 'annotated-mark';
-        mark.style.backgroundColor = color;
-        mark.style.color = 'inherit';
-        katexEl.parentNode.insertBefore(mark, katexEl);
-        mark.appendChild(katexEl);
-        createdElements.push(mark);
+  // Pre-calculate planned units before mutating the DOM
+  const plannedUnits = [];
+  for (const item of items) {
+    if (item.nodeType === Node.ELEMENT_NODE) {
+      plannedUnits.push({ type: 'katex', el: item });
+    } else {
+      const isStartNode = (item === range.startContainer);
+      const isEndNode = (item === range.endContainer);
+      let startOffset = isStartNode ? range.startOffset : 0;
+      let endOffset = isEndNode ? range.endOffset : item.nodeValue.length;
+
+      if (startOffset > item.nodeValue.length) startOffset = item.nodeValue.length;
+      if (endOffset > item.nodeValue.length) endOffset = item.nodeValue.length;
+      if (endOffset > startOffset) {
+        plannedUnits.push({ type: 'text', node: item, startOffset, endOffset });
       }
-    } else if (type === 'color') {
-      katexEl.style.color = color;
-      createdElements.push(katexEl);
-    } else if (type === 'comment') {
-      const parentMark = katexEl.closest('mark');
-      if (parentMark && root.contains(parentMark)) {
-        setCommentsOnElement(parentMark, [commentText]);
-        createdElements.push(parentMark);
-      } else {
-        const mark = document.createElement('mark');
-        mark.className = 'annotated-comment';
-        setCommentsOnElement(mark, [commentText]);
-        if (inheritedBgColor && inheritedBgColor !== 'rgb(241, 245, 249)' && inheritedBgColor !== '#f1f5f9') {
-          mark.classList.add('annotated-mark');
-          mark.style.backgroundColor = inheritedBgColor;
+    }
+  }
+
+  for (const unit of plannedUnits) {
+    if (unit.type === 'katex') {
+      const katexEl = unit.el;
+      if (type === 'highlight') {
+        const parentMark = katexEl.closest('mark');
+        if (parentMark && root.contains(parentMark)) {
+          parentMark.classList.add('annotated-mark');
+          parentMark.style.backgroundColor = color;
+          parentMark.style.color = 'inherit';
+          createdElements.push(parentMark);
+        } else {
+          const mark = document.createElement('mark');
+          mark.className = 'annotated-mark';
+          mark.style.backgroundColor = color;
+          mark.style.color = 'inherit';
+          katexEl.parentNode.insertBefore(mark, katexEl);
+          mark.appendChild(katexEl);
+          createdElements.push(mark);
         }
-        katexEl.parentNode.insertBefore(mark, katexEl);
-        mark.appendChild(katexEl);
-        createdElements.push(mark);
+      } else if (type === 'color') {
+        katexEl.style.color = color;
+        createdElements.push(katexEl);
+      } else if (type === 'comment') {
+        const parentMark = katexEl.closest('mark');
+        if (parentMark && root.contains(parentMark)) {
+          setCommentsOnElement(parentMark, [commentText]);
+          createdElements.push(parentMark);
+        } else {
+          const mark = document.createElement('mark');
+          mark.className = 'annotated-comment';
+          setCommentsOnElement(mark, [commentText]);
+          if (inheritedBgColor && inheritedBgColor !== 'rgb(241, 245, 249)' && inheritedBgColor !== '#f1f5f9') {
+            mark.classList.add('annotated-mark');
+            mark.style.backgroundColor = inheritedBgColor;
+          }
+          katexEl.parentNode.insertBefore(mark, katexEl);
+          mark.appendChild(katexEl);
+          createdElements.push(mark);
+        }
       }
-    }
-  });
-
-  // 2. Process text nodes (which excludes internal KaTeX text nodes)
-  const textNodes = getTextNodesInRange(root, range);
-  if (textNodes.length === 0 && createdElements.length === 0) return [];
-
-  textNodes.forEach((node) => {
-    const isStartNode = (node === range.startContainer);
-    const isEndNode = (node === range.endContainer);
-
-    let startOffset = isStartNode ? range.startOffset : 0;
-    let endOffset = isEndNode ? range.endOffset : node.nodeValue.length;
-
-    if (startOffset > node.nodeValue.length) startOffset = node.nodeValue.length;
-    if (endOffset > node.nodeValue.length) endOffset = node.nodeValue.length;
-    if (endOffset <= startOffset) return;
-
-    // Split at end first if needed
-    let targetNode = node;
+    } else {
+      const { node, startOffset, endOffset } = unit;
+      let targetNode = node;
     if (endOffset < node.nodeValue.length) {
       targetNode.splitText(endOffset);
     }
@@ -413,11 +453,11 @@ export function applyFormattingToRange(root, range, options = {}) {
     }
 
     if (!targetNode.nodeValue || targetNode.nodeValue.trim().length === 0) {
-      return;
+      continue;
     }
 
     const parent = targetNode.parentNode;
-    if (!parent) return;
+    if (!parent) continue;
 
     if (type === 'highlight') {
       const parentMark = parent.closest('mark');
@@ -538,7 +578,8 @@ export function applyFormattingToRange(root, range, options = {}) {
         createdElements.push(mark);
       }
     }
-  });
+  }
+  }
 
   if (type === 'highlight' || type === 'comment') {
     consolidateMarks(root);
@@ -962,14 +1003,16 @@ export default function MarkdownViewer({
 
     const validCreated = (createdElements || []).filter(el => paper.contains(el));
     if (validCreated.length > 0) {
-      const sel = window.getSelection();
-      if (sel) {
-        sel.removeAllRanges();
-        const newRange = document.createRange();
-        newRange.setStartBefore(validCreated[0]);
-        newRange.setEndAfter(validCreated[validCreated.length - 1]);
-        sel.addRange(newRange);
-      }
+      try {
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          const newRange = document.createRange();
+          newRange.setStartBefore(validCreated[0]);
+          newRange.setEndAfter(validCreated[validCreated.length - 1]);
+          sel.addRange(newRange);
+        }
+      } catch {}
     }
 
     pushHistorySnapshot();

@@ -392,6 +392,53 @@ export default function WordViewer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlayground, handleSavePlayground, handleUndo, handleRedo, exitMarkBoundary, pushHistorySnapshot, triggerAutoSave]);
 
+  // Track selection changes to show the FloatingAnnotationBar
+  useEffect(() => {
+    if (!isPlayground) {
+      setSelectionBox({ top: 0, left: 0, visible: false });
+      return;
+    }
+
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+        setSelectionBox(prev => prev.visible ? { ...prev, visible: false } : prev);
+        return;
+      }
+
+      const rawText = selection.toString();
+      if (!rawText || !rawText.trim()) {
+        setSelectionBox(prev => prev.visible ? { ...prev, visible: false } : prev);
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const paper = paperRef.current;
+      if (!paper || !paper.contains(range.commonAncestorContainer)) {
+        setSelectionBox(prev => prev.visible ? { ...prev, visible: false } : prev);
+        return;
+      }
+
+      const rect = range.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        setSelectionBox(prev => prev.visible ? { ...prev, visible: false } : prev);
+        return;
+      }
+
+      const top = rect.top - 54 < 10 ? rect.bottom + 10 : rect.top - 54;
+      const left = Math.max(16, Math.min(window.innerWidth - 320, rect.left + (rect.width / 2) - 140));
+
+      setSelectionBox({
+        top,
+        left,
+        visible: true
+      });
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [isPlayground]);
+
   // Highlight Formatter
   const handleHighlight = (color) => {
     const selection = window.getSelection();
@@ -730,7 +777,7 @@ export default function WordViewer({
       {/* Floating Selection Box */}
       {selectionBox.visible && isPlayground && (
         <FloatingAnnotationBar 
-          position={{ top: selectionBox.top, left: selectionBox.left }}
+          position={selectionBox}
           onHighlight={handleHighlight}
           onTextColor={handleTextColor}
           onUnderline={() => { document.execCommand('underline'); pushHistorySnapshot(); triggerAutoSave(true, 300); }}
