@@ -19,7 +19,10 @@ import {
   ChevronDown,
   ChevronRight,
   Upload,
-  Wrench
+  Wrench,
+  ListChecks,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { downloadMarkdown } from '../utils/pdfExport';
 import { showInAppAlert } from '../utils/alerts';
@@ -56,6 +59,9 @@ export default function FileSidebar({
   onRenameFolder,
   onDeleteFolder,
   onMoveFileToFolder,
+
+  // Batch deletion
+  onBatchDeleteFiles,
 
   // Current active tool
   activeTool = 'markdown', // 'markdown' | 'word' | 'pptx'
@@ -169,6 +175,10 @@ export default function FileSidebar({
   const [editingItem, setEditingItem] = useState(null);
   const [editName, setEditName] = useState('');
   const editInputRef = useRef(null);
+
+  // Batch selection state: { [`${category}:${id}`]: true }
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState({});
 
   // Hidden file input refs
   const mdInputRef = useRef(null);
@@ -370,6 +380,91 @@ export default function FileSidebar({
   const filteredMd = resolvedMdFiles.filter(f => !query || f.name.toLowerCase().includes(query));
   const filteredWord = wordFiles.filter(f => !query || f.name.toLowerCase().includes(query));
   const filteredPptx = pptxFiles.filter(f => !query || f.name.toLowerCase().includes(query));
+
+  // Batch selection helpers
+  const getVisibleFiles = () => {
+    const list = [];
+    if (activeCategory === 'all' || activeCategory === 'markdown') {
+      filteredMd.forEach(f => list.push({ category: 'markdown', id: f.id, name: f.name }));
+    }
+    if (activeCategory === 'all' || activeCategory === 'word') {
+      filteredWord.forEach(f => list.push({ category: 'word', id: f.id, name: f.name }));
+    }
+    if (activeCategory === 'all' || activeCategory === 'pptx') {
+      filteredPptx.forEach(f => list.push({ category: 'pptx', id: f.id, name: f.name }));
+    }
+    return list;
+  };
+
+  const visibleFiles = getVisibleFiles();
+  const selectedCount = Object.keys(selectedFiles).length;
+  const allVisibleSelected = visibleFiles.length > 0 && visibleFiles.every(f => selectedFiles[`${f.category}:${f.id}`]);
+
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(prev => {
+      if (prev) setSelectedFiles({});
+      return !prev;
+    });
+  };
+
+  const cancelSelectionMode = () => {
+    setIsSelectionMode(false);
+    setSelectedFiles({});
+  };
+
+  const toggleSelectFile = (category, fileId) => {
+    const key = `${category}:${fileId}`;
+    setSelectedFiles(prev => {
+      const next = { ...prev };
+      if (next[key]) {
+        delete next[key];
+      } else {
+        next[key] = true;
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      // Deselect all visible
+      setSelectedFiles(prev => {
+        const next = { ...prev };
+        visibleFiles.forEach(f => {
+          delete next[`${f.category}:${f.id}`];
+        });
+        return next;
+      });
+    } else {
+      // Select all visible
+      setSelectedFiles(prev => {
+        const next = { ...prev };
+        visibleFiles.forEach(f => {
+          next[`${f.category}:${f.id}`] = true;
+        });
+        return next;
+      });
+    }
+  };
+
+  const handleExecuteBatchDelete = () => {
+    const markdownIds = [];
+    const wordIds = [];
+    const pptxIds = [];
+
+    Object.keys(selectedFiles).forEach(key => {
+      const [category, id] = key.split(':');
+      if (category === 'markdown') markdownIds.push(id);
+      else if (category === 'word') wordIds.push(id);
+      else if (category === 'pptx') pptxIds.push(id);
+    });
+
+    if (markdownIds.length === 0 && wordIds.length === 0 && pptxIds.length === 0) return;
+
+    onBatchDeleteFiles?.({ markdownIds, wordIds, pptxIds });
+    setIsSelectionMode(false);
+    setSelectedFiles({});
+  };
 
   // Render a folder row with its nested files
   const renderFolderRow = (folder, folderFiles, renderCard, colorClass) => {
@@ -589,14 +684,16 @@ export default function FileSidebar({
     const isActive = activeTool === 'markdown' && file.id === resolvedActiveMdId;
     const isEditing = editingItem?.category === 'markdown' && editingItem?.id === file.id;
     const isDragging = draggedItem?.fileId === file.id;
+    const isSelected = !!selectedFiles[`markdown:${file.id}`];
 
     return (
       <div
         key={file.id}
         role="button"
         tabIndex={0}
-        draggable={!isEditing}
+        draggable={!isEditing && !isSelectionMode}
         onDragStart={(e) => {
+          if (isSelectionMode) return;
           e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: file.id, category: 'markdown' }));
           e.dataTransfer.effectAllowed = 'move';
           setDraggedItem({ fileId: file.id, category: 'markdown' });
@@ -609,6 +706,10 @@ export default function FileSidebar({
         data-doc-category="markdown"
         data-in-folder={isNested ? 'true' : 'false'}
         onClick={() => {
+          if (isSelectionMode) {
+            toggleSelectFile('markdown', file.id);
+            return;
+          }
           if (!isEditing) {
             resolvedSelectMd?.(file.id);
             if (window.innerWidth < 1024) onClose?.();
@@ -617,6 +718,10 @@ export default function FileSidebar({
         onKeyDown={(e) => {
           if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
             e.preventDefault();
+            if (isSelectionMode) {
+              toggleSelectFile('markdown', file.id);
+              return;
+            }
             resolvedSelectMd?.(file.id);
             if (window.innerWidth < 1024) onClose?.();
           }
@@ -624,13 +729,34 @@ export default function FileSidebar({
         className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
           isDragging ? 'opacity-40 ring-2 ring-blue-400' : ''
         } ${
-          isActive
-            ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-100 font-medium border border-blue-200 dark:border-blue-800 shadow-2xs ring-1 ring-blue-500/20'
-            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+          isSelected
+            ? 'bg-blue-100/80 dark:bg-blue-950/60 text-blue-900 dark:text-blue-100 font-medium border border-blue-400 dark:border-blue-700 shadow-2xs ring-2 ring-blue-500/30'
+            : isActive
+              ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-100 font-medium border border-blue-200 dark:border-blue-800 shadow-2xs ring-1 ring-blue-500/20'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-          <FileCode className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-blue-500/70'}`} />
+          {isSelectionMode ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSelectFile('markdown', file.id);
+              }}
+              className="p-0.5 rounded text-blue-600 dark:text-blue-400 shrink-0"
+              data-testid={`checkbox-markdown-${file.id}`}
+              aria-label={isSelected ? `Deselect ${file.name}` : `Select ${file.name}`}
+            >
+              {isSelected ? (
+                <CheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300" />
+              )}
+            </button>
+          ) : (
+            <FileCode className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-blue-500/70'}`} />
+          )}
           <div className="min-w-0 flex-1">
             {isEditing ? (
               <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -663,7 +789,7 @@ export default function FileSidebar({
           </div>
         </div>
 
-        {!isEditing && (
+        {!isEditing && !isSelectionMode && (
           <div className={`flex items-center gap-0.5 transition-opacity ${
             isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
           }`}>
@@ -713,14 +839,16 @@ export default function FileSidebar({
     const isActive = activeTool === 'word' && doc.id === activeWordId;
     const isEditing = editingItem?.category === 'word' && editingItem?.id === doc.id;
     const isDragging = draggedItem?.fileId === doc.id;
+    const isSelected = !!selectedFiles[`word:${doc.id}`];
 
     return (
       <div
         key={doc.id}
         role="button"
         tabIndex={0}
-        draggable={!isEditing}
+        draggable={!isEditing && !isSelectionMode}
         onDragStart={(e) => {
+          if (isSelectionMode) return;
           e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: doc.id, category: 'word' }));
           e.dataTransfer.effectAllowed = 'move';
           setDraggedItem({ fileId: doc.id, category: 'word' });
@@ -733,6 +861,10 @@ export default function FileSidebar({
         data-doc-category="word"
         data-in-folder={isNested ? 'true' : 'false'}
         onClick={() => {
+          if (isSelectionMode) {
+            toggleSelectFile('word', doc.id);
+            return;
+          }
           if (!isEditing) {
             onSelectWordFile?.(doc.id);
             if (window.innerWidth < 1024) onClose?.();
@@ -741,6 +873,10 @@ export default function FileSidebar({
         onKeyDown={(e) => {
           if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
             e.preventDefault();
+            if (isSelectionMode) {
+              toggleSelectFile('word', doc.id);
+              return;
+            }
             onSelectWordFile?.(doc.id);
             if (window.innerWidth < 1024) onClose?.();
           }
@@ -748,13 +884,34 @@ export default function FileSidebar({
         className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
           isDragging ? 'opacity-40 ring-2 ring-indigo-400' : ''
         } ${
-          isActive
-            ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-100 font-medium border border-indigo-200 dark:border-indigo-800 shadow-2xs ring-1 ring-indigo-500/20'
-            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+          isSelected
+            ? 'bg-indigo-100/80 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-100 font-medium border border-indigo-400 dark:border-indigo-700 shadow-2xs ring-2 ring-indigo-500/30'
+            : isActive
+              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-100 font-medium border border-indigo-200 dark:border-indigo-800 shadow-2xs ring-1 ring-indigo-500/20'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-          <FileText className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-500/70'}`} />
+          {isSelectionMode ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSelectFile('word', doc.id);
+              }}
+              className="p-0.5 rounded text-indigo-600 dark:text-indigo-400 shrink-0"
+              data-testid={`checkbox-word-${doc.id}`}
+              aria-label={isSelected ? `Deselect ${doc.name}` : `Select ${doc.name}`}
+            >
+              {isSelected ? (
+                <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300" />
+              )}
+            </button>
+          ) : (
+            <FileText className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-500/70'}`} />
+          )}
           <div className="min-w-0 flex-1">
             {isEditing ? (
               <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -787,7 +944,7 @@ export default function FileSidebar({
           </div>
         </div>
 
-        {!isEditing && (
+        {!isEditing && !isSelectionMode && (
           <div className={`flex items-center gap-0.5 transition-opacity ${
             isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
           }`}>
@@ -825,14 +982,16 @@ export default function FileSidebar({
     const isActive = activeTool === 'pptx' && deck.id === activePptxId;
     const isEditing = editingItem?.category === 'pptx' && editingItem?.id === deck.id;
     const isDragging = draggedItem?.fileId === deck.id;
+    const isSelected = !!selectedFiles[`pptx:${deck.id}`];
 
     return (
       <div
         key={deck.id}
         role="button"
         tabIndex={0}
-        draggable={!isEditing}
+        draggable={!isEditing && !isSelectionMode}
         onDragStart={(e) => {
+          if (isSelectionMode) return;
           e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: deck.id, category: 'pptx' }));
           e.dataTransfer.effectAllowed = 'move';
           setDraggedItem({ fileId: deck.id, category: 'pptx' });
@@ -845,6 +1004,10 @@ export default function FileSidebar({
         data-doc-category="pptx"
         data-in-folder={isNested ? 'true' : 'false'}
         onClick={() => {
+          if (isSelectionMode) {
+            toggleSelectFile('pptx', deck.id);
+            return;
+          }
           if (!isEditing) {
             onSelectPptxFile?.(deck.id);
             if (window.innerWidth < 1024) onClose?.();
@@ -853,6 +1016,10 @@ export default function FileSidebar({
         onKeyDown={(e) => {
           if ((e.key === 'Enter' || e.key === ' ') && !isEditing) {
             e.preventDefault();
+            if (isSelectionMode) {
+              toggleSelectFile('pptx', deck.id);
+              return;
+            }
             onSelectPptxFile?.(deck.id);
             if (window.innerWidth < 1024) onClose?.();
           }
@@ -860,13 +1027,34 @@ export default function FileSidebar({
         className={`group relative flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
           isDragging ? 'opacity-40 ring-2 ring-amber-400' : ''
         } ${
-          isActive
-            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 font-medium border border-amber-200 dark:border-amber-800 shadow-2xs ring-1 ring-amber-500/20'
-            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+          isSelected
+            ? 'bg-amber-100/80 dark:bg-amber-950/60 text-amber-900 dark:text-amber-100 font-medium border border-amber-400 dark:border-amber-700 shadow-2xs ring-2 ring-amber-500/30'
+            : isActive
+              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 font-medium border border-amber-200 dark:border-amber-800 shadow-2xs ring-1 ring-amber-500/20'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1 mr-1">
-          <Presentation className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500/70'}`} />
+          {isSelectionMode ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSelectFile('pptx', deck.id);
+              }}
+              className="p-0.5 rounded text-amber-600 dark:text-amber-400 shrink-0"
+              data-testid={`checkbox-pptx-${deck.id}`}
+              aria-label={isSelected ? `Deselect ${deck.name}` : `Select ${deck.name}`}
+            >
+              {isSelected ? (
+                <CheckSquare className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300" />
+              )}
+            </button>
+          ) : (
+            <Presentation className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500/70'}`} />
+          )}
           <div className="min-w-0 flex-1">
             {isEditing ? (
               <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -899,7 +1087,7 @@ export default function FileSidebar({
           </div>
         </div>
 
-        {!isEditing && (
+        {!isEditing && !isSelectionMode && (
           <div className={`flex items-center gap-0.5 transition-opacity ${
             isActive ? 'opacity-80 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
           }`}>
@@ -989,13 +1177,30 @@ export default function FileSidebar({
             </span>
           </div>
 
-          <button 
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Collapse Sidebar (Cmd + B)"
-          >
-            <PanelLeftClose className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={toggleSelectionMode}
+              className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold ${
+                isSelectionMode
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={isSelectionMode ? "Exit selection mode" : "Select files for batch deletion"}
+              data-testid="toggle-selection-mode-btn"
+            >
+              <ListChecks className="w-4 h-4" />
+              <span className="text-[11px] hidden sm:inline">{isSelectionMode ? 'Cancel' : 'Select'}</span>
+            </button>
+
+            <button 
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              title="Collapse Sidebar (Cmd + B)"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Category Filter Tabs */}
@@ -1075,6 +1280,57 @@ export default function FileSidebar({
             )}
           </div>
         </div>
+
+        {/* Selection Mode Action Bar */}
+        {isSelectionMode && (
+          <div className="mx-3 my-1.5 p-2.5 bg-blue-50/90 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-900/60 rounded-xl animate-in fade-in slide-in-from-top-1 duration-150 flex flex-col gap-2 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={toggleSelectAllVisible}
+                className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100 transition-colors"
+                data-testid="select-all-btn"
+              >
+                {allVisibleSelected ? (
+                  <CheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400 dark:text-slate-500 shrink-0" />
+                )}
+                <span>{allVisibleSelected ? 'Deselect All' : `Select All (${visibleFiles.length})`}</span>
+              </button>
+
+              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300" data-testid="selected-count-badge">
+                {selectedCount} selected
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={selectedCount === 0}
+                onClick={handleExecuteBatchDelete}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs ${
+                  selectedCount > 0
+                    ? 'bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white cursor-pointer'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                }`}
+                data-testid="batch-delete-btn"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete {selectedCount > 0 ? `(${selectedCount})` : ''}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={cancelSelectionMode}
+                className="py-1.5 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors"
+                data-testid="cancel-selection-btn"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Categorized Document Lists */}
         <div className="flex-1 overflow-y-auto p-2.5 space-y-4 custom-scrollbar">

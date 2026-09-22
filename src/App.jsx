@@ -990,6 +990,109 @@ export default function App() {
     });
   }, [pptxFiles, activePptxId, handleSelectPptxFile, closeConfirmModal]);
 
+  // Batch delete files across Markdown, Word, and PowerPoint
+  const handleBatchDeleteFiles = useCallback(({ markdownIds = [], wordIds = [], pptxIds = [] }) => {
+    const totalCount = markdownIds.length + wordIds.length + pptxIds.length;
+    if (totalCount === 0) return;
+
+    setConfirmModal({
+      isOpen: true,
+      title: `Delete ${totalCount} ${totalCount === 1 ? 'Document' : 'Documents'}`,
+      fileName: `${totalCount} selected ${totalCount === 1 ? 'file' : 'files'}`,
+      message: `Are you sure you want to delete ${totalCount === 1 ? 'this document' : `these ${totalCount} documents`}? This action cannot be undone and will permanently remove all drafts, notes, and annotations for these files.`,
+      confirmLabel: `Delete ${totalCount} ${totalCount === 1 ? 'File' : 'Files'}`,
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        // 1. Batch delete Markdown files
+        if (markdownIds.length > 0) {
+          const mdSet = new Set(markdownIds);
+          const filesToDelete = files.filter(f => mdSet.has(f.id));
+          filesToDelete.forEach(f => {
+            try {
+              localStorage.removeItem(`md_playground_saved_${f.name}`);
+            } catch (e) {}
+          });
+
+          const remainingMd = files.filter(f => !mdSet.has(f.id));
+          if (remainingMd.length > 0) {
+            setFiles(remainingMd);
+            if (mdSet.has(activeFileId)) {
+              setActiveFileId(remainingMd[0].id);
+            }
+          } else {
+            const fallbackId = `file-${Date.now()}`;
+            const fallbackDoc = {
+              id: fallbackId,
+              name: 'Untitled.md',
+              content: '# Untitled\n\nStart typing your markdown here...',
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            };
+            setFiles([fallbackDoc]);
+            setActiveFileId(fallbackId);
+          }
+        }
+
+        // 2. Batch delete Word documents
+        if (wordIds.length > 0) {
+          const wordSet = new Set(wordIds);
+          let remainingWord = [];
+          setWordFiles(prev => {
+            remainingWord = prev.filter(f => !wordSet.has(f.id));
+            try { localStorage.setItem('docx_files_library', JSON.stringify(remainingWord)); } catch {}
+            return remainingWord;
+          });
+
+          for (const docId of wordIds) {
+            await removeStorageItem('documents', docId);
+          }
+
+          if (wordSet.has(activeWordId)) {
+            if (remainingWord.length > 0) {
+              handleSelectWordFile(remainingWord[0].id);
+            } else {
+              setActiveWordId(null);
+              setWordData({ fileName: '', html: '' });
+              try { localStorage.removeItem('docx_active_doc'); } catch {}
+            }
+          }
+        }
+
+        // 3. Batch delete PowerPoint decks
+        if (pptxIds.length > 0) {
+          const pptxSet = new Set(pptxIds);
+          const decksToDelete = pptxFiles.filter(f => pptxSet.has(f.id));
+          let remainingPptx = [];
+          setPptxFiles(prev => {
+            remainingPptx = prev.filter(f => !pptxSet.has(f.id));
+            try { localStorage.setItem('pptx_files_library', JSON.stringify(remainingPptx)); } catch {}
+            return remainingPptx;
+          });
+
+          for (const deckId of pptxIds) {
+            await removeStorageItem('documents', deckId);
+          }
+          for (const deck of decksToDelete) {
+            await clearPlaygroundDraft('pptx_draft_' + deck.name);
+          }
+
+          if (pptxSet.has(activePptxId)) {
+            if (remainingPptx.length > 0) {
+              handleSelectPptxFile(remainingPptx[0].id);
+            } else {
+              setActivePptxId(null);
+              setPptxData({ fileName: '', slides: [] });
+              try { localStorage.removeItem('pptx_active_deck'); } catch {}
+            }
+          }
+        }
+
+        closeConfirmModal();
+      }
+    });
+  }, [files, activeFileId, wordFiles, activeWordId, handleSelectWordFile, pptxFiles, activePptxId, handleSelectPptxFile, closeConfirmModal]);
+
   // Rename PowerPoint Deck
   const handleRenamePptxFile = useCallback(async (deckId, newName) => {
     setPptxFiles(prev => {
@@ -1160,6 +1263,7 @@ export default function App() {
             onRenameFolder={handleRenameFolder}
             onDeleteFolder={handleDeleteFolder}
             onMoveFileToFolder={handleMoveFileToFolder}
+            onBatchDeleteFiles={handleBatchDeleteFiles}
 
             activeTool={activeTool}
             onClose={() => setShowFileSidebar(false)}
