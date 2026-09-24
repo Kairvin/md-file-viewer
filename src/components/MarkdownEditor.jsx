@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileCode, UploadCloud } from 'lucide-react';
 
-export default function MarkdownEditor({ content, onChange, onDropFile }) {
+export default function MarkdownEditor({ content, onChange, onDropFile, onDropFiles }) {
   const lineCount = content.split('\n').length;
 
   const handleDragOver = (e) => {
@@ -10,8 +10,16 @@ export default function MarkdownEditor({ content, onChange, onDropFile }) {
 
   const handleDrop = (e) => {
     e.preventDefault();
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    if (onDropFiles) {
+      onDropFiles(files);
+      return;
+    }
+
+    const file = files[0];
+    if (file && onDropFile) {
       const reader = new FileReader();
       reader.onload = (event) => {
         onDropFile(file.name, event.target.result);

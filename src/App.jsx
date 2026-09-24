@@ -369,22 +369,24 @@ export default function App() {
     });
   }, [folders, closeConfirmModal]);
 
-  const handleMoveFileToFolder = useCallback((fileId, targetFolderId, category) => {
+  const handleMoveFileToFolder = useCallback((fileIdOrIds, targetFolderId, category) => {
+    const ids = Array.isArray(fileIdOrIds) ? fileIdOrIds : [fileIdOrIds];
+    const idSet = new Set(ids);
     if (category === 'markdown') {
       setFiles(prev => {
-        const next = prev.map(f => f.id === fileId ? { ...f, folderId: targetFolderId } : f);
+        const next = prev.map(f => idSet.has(f.id) ? { ...f, folderId: targetFolderId } : f);
         try { localStorage.setItem('md_files_library', JSON.stringify(next)); } catch {}
         return next;
       });
     } else if (category === 'word') {
       setWordFiles(prev => {
-        const next = prev.map(f => f.id === fileId ? { ...f, folderId: targetFolderId } : f);
+        const next = prev.map(f => idSet.has(f.id) ? { ...f, folderId: targetFolderId } : f);
         try { localStorage.setItem('docx_files_library', JSON.stringify(next)); } catch {}
         return next;
       });
     } else if (category === 'pptx') {
       setPptxFiles(prev => {
-        const next = prev.map(f => f.id === fileId ? { ...f, folderId: targetFolderId } : f);
+        const next = prev.map(f => idSet.has(f.id) ? { ...f, folderId: targetFolderId } : f);
         try { localStorage.setItem('pptx_files_library', JSON.stringify(next)); } catch {}
         return next;
       });
@@ -1163,6 +1165,234 @@ export default function App() {
     try { localStorage.setItem('pptx_active_deck', JSON.stringify(sample)); } catch {}
   }, []);
 
+  // Format category detector
+  const getFileCategory = (name = '') => {
+    const lower = name.toLowerCase();
+    if (lower.endsWith('.docx')) return 'word';
+    if (lower.endsWith('.pptx')) return 'pptx';
+    if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.txt')) return 'markdown';
+    if (lower.endsWith('.pdf')) return 'pdf';
+    return 'unsupported';
+  };
+
+  // Centralized Format Validator for dropped files
+  const validateDroppedFiles = useCallback((fileList) => {
+    if (!fileList || fileList.length === 0) return { valid: false };
+
+    const files = Array.from(fileList);
+
+    // Check for PDF format
+    const hasPdf = files.some(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (hasPdf) {
+      showInAppAlert(
+        'PDF format is not supported. Please import only Markdown (.md), Word (.docx), or PowerPoint (.pptx) documents.',
+        'Format Not Supported',
+        'warning'
+      );
+      return { valid: false };
+    }
+
+    // Check for other unsupported formats
+    const unsupported = files.filter(f => getFileCategory(f.name) === 'unsupported');
+    if (unsupported.length > 0) {
+      const names = unsupported.map(f => `"${f.name}"`).slice(0, 3).join(', ');
+      showInAppAlert(
+        `The file(s) ${names} have an unsupported format. Only .md, .docx, and .pptx documents are supported.`,
+        'Format Not Supported',
+        'warning'
+      );
+      return { valid: false };
+    }
+
+    // Check for mixed formats among supported formats
+    const categories = Array.from(new Set(files.map(f => getFileCategory(f.name))));
+    if (categories.length > 1) {
+      showInAppAlert(
+        'All dropped files must be in the same format (.md, .docx, or .pptx). Mixed formats cannot be imported together.',
+        'Mixed Formats Not Allowed',
+        'warning'
+      );
+      return { valid: false };
+    }
+
+    return { valid: true, category: categories[0], files };
+  }, []);
+
+  // Batch Import Markdown Files
+  const handleBatchImportMarkdown = useCallback(async (fileList, targetFolderId = null) => {
+    const filesArray = Array.from(fileList);
+    const newDocs = [];
+    const now = Date.now();
+
+    for (let i = 0; i < filesArray.length; i++) {
+      const f = filesArray[i];
+      try {
+        const text = await f.text();
+        const formattedName = f.name.endsWith('.md') || f.name.endsWith('.txt') || f.name.endsWith('.markdown') ? f.name : `${f.name}.md`;
+        newDocs.push({
+          id: `file-${now}-${i}`,
+          name: formattedName,
+          content: text,
+          folderId: targetFolderId || null,
+          createdAt: now + i,
+          updatedAt: now + i,
+        });
+      } catch (err) {
+        console.error(`Failed to read markdown file "${f.name}":`, err);
+      }
+    }
+
+    if (newDocs.length === 0) return;
+
+    setFiles(prev => {
+      const newNames = new Set(newDocs.map(d => d.name.toLowerCase()));
+      const filteredPrev = prev.filter(p => !newNames.has(p.name.toLowerCase()));
+      const next = [...newDocs, ...filteredPrev];
+      try { localStorage.setItem('md_files_library', JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    setActiveFileId(newDocs[0].id);
+    setActiveTool('markdown');
+    setHasPlaygroundEdits(false);
+    showInAppAlert(
+      `Successfully imported ${newDocs.length} Markdown ${newDocs.length === 1 ? 'file' : 'files'}.`,
+      'Files Imported',
+      'info'
+    );
+  }, []);
+
+  // Batch Import Word Files
+  const handleBatchImportWord = useCallback(async (fileList, targetFolderId = null) => {
+    const filesArray = Array.from(fileList);
+    const newDocs = [];
+    const now = Date.now();
+
+    for (let i = 0; i < filesArray.length; i++) {
+      const f = filesArray[i];
+      try {
+        const result = await parseDocxFile(f);
+        if (result.success) {
+          const docId = `docx-${now}-${i}`;
+          const newDoc = { id: docId, name: f.name, html: result.html, format: 'docx', folderId: targetFolderId || null };
+          await setStorageItem('documents', docId, newDoc);
+
+          newDocs.push({
+            id: docId,
+            name: f.name,
+            format: 'docx',
+            folderId: targetFolderId || null,
+            updatedAt: now + i,
+            html: result.html
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to parse Word file "${f.name}":`, err);
+      }
+    }
+
+    if (newDocs.length === 0) return;
+
+    setWordFiles(prev => {
+      const newNames = new Set(newDocs.map(d => d.name));
+      const filteredPrev = prev.filter(p => !newNames.has(p.name));
+      const next = [...newDocs.map(d => ({ id: d.id, name: d.name, format: d.format, folderId: d.folderId, updatedAt: d.updatedAt })), ...filteredPrev];
+      try { localStorage.setItem('docx_files_library', JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    const primaryDoc = newDocs[0];
+    setActiveWordId(primaryDoc.id);
+    setWordData({ fileName: primaryDoc.name, html: primaryDoc.html });
+    try { localStorage.setItem('docx_active_doc', JSON.stringify({ fileName: primaryDoc.name, html: primaryDoc.html })); } catch {}
+    setActiveTool('word');
+    showInAppAlert(
+      `Successfully imported ${newDocs.length} Word ${newDocs.length === 1 ? 'document' : 'documents'}.`,
+      'Word Documents Ready',
+      'info'
+    );
+  }, []);
+
+  // Batch Import PowerPoint Files
+  const handleBatchImportPptx = useCallback(async (fileList, targetFolderId = null) => {
+    const filesArray = Array.from(fileList);
+    const newDecks = [];
+    const now = Date.now();
+
+    for (let i = 0; i < filesArray.length; i++) {
+      const f = filesArray[i];
+      try {
+        await clearPlaygroundDraft('pptx_draft_' + f.name);
+        const result = await parsePptxFile(f);
+        if (result.success) {
+          const deckId = `pptx-${now}-${i}`;
+          const newDeck = { id: deckId, name: f.name, slides: result.slides, format: 'pptx', folderId: targetFolderId || null };
+          await setStorageItem('documents', deckId, newDeck);
+
+          newDecks.push({
+            id: deckId,
+            name: f.name,
+            format: 'pptx',
+            slideCount: result.slides?.length || 0,
+            folderId: targetFolderId || null,
+            updatedAt: now + i,
+            slides: result.slides
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to parse PowerPoint file "${f.name}":`, err);
+      }
+    }
+
+    if (newDecks.length === 0) return;
+
+    setPptxFiles(prev => {
+      const newNames = new Set(newDecks.map(d => d.name));
+      const filteredPrev = prev.filter(p => !newNames.has(p.name));
+      const next = [...newDecks.map(d => ({ id: d.id, name: d.name, format: d.format, slideCount: d.slideCount, folderId: d.folderId, updatedAt: d.updatedAt })), ...filteredPrev];
+      try { localStorage.setItem('pptx_files_library', JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    const primaryDeck = newDecks[0];
+    setActivePptxId(primaryDeck.id);
+    setPptxData({ fileName: primaryDeck.name, slides: primaryDeck.slides });
+    try { localStorage.setItem('pptx_active_deck', JSON.stringify({ fileName: primaryDeck.name, slides: primaryDeck.slides })); } catch {}
+    setActiveTool('pptx');
+    showInAppAlert(
+      `Successfully imported ${newDecks.length} PowerPoint ${newDecks.length === 1 ? 'presentation' : 'presentations'}.`,
+      'PowerPoint Ready',
+      'info'
+    );
+  }, []);
+
+  // Main Unified Batch Importer
+  const handleBatchImportFiles = useCallback((fileList, targetFolderId = null) => {
+    const { valid, category, files: validFiles } = validateDroppedFiles(fileList);
+    if (!valid || !category || !validFiles) return false;
+
+    if (targetFolderId) {
+      const targetFolder = folders.find(f => f.id === targetFolderId);
+      if (targetFolder && targetFolder.category !== category) {
+        showInAppAlert(
+          `Cannot import ${category} files into a ${targetFolder.category} folder. Folders only accept documents of the matching format.`,
+          'Category Mismatch',
+          'warning'
+        );
+        return false;
+      }
+    }
+
+    if (category === 'markdown') {
+      handleBatchImportMarkdown(validFiles, targetFolderId);
+    } else if (category === 'word') {
+      handleBatchImportWord(validFiles, targetFolderId);
+    } else if (category === 'pptx') {
+      handleBatchImportPptx(validFiles, targetFolderId);
+    }
+    return true;
+  }, [validateDroppedFiles, folders, handleBatchImportMarkdown, handleBatchImportWord, handleBatchImportPptx]);
+
   // Global file drag-and-drop router across formats (.md, .docx, .pptx)
   useEffect(() => {
     const handleDragOver = (e) => {
@@ -1180,21 +1410,7 @@ export default function App() {
       const droppedFiles = e.dataTransfer?.files;
       if (!droppedFiles || droppedFiles.length === 0) return;
 
-      const file = droppedFiles[0];
-      const lower = file.name.toLowerCase();
-
-      if (lower.endsWith('.docx')) {
-        handleOpenDocxFile(file);
-      } else if (lower.endsWith('.pptx')) {
-        handleOpenPptxFile(file);
-      } else if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.txt')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setActiveTool('markdown');
-          handleOpenFile(file.name, event.target.result);
-        };
-        reader.readAsText(file);
-      }
+      handleBatchImportFiles(droppedFiles);
     };
 
     window.addEventListener('dragover', handleDragOver);
@@ -1203,7 +1419,7 @@ export default function App() {
       window.removeEventListener('dragover', handleDragOver);
       window.removeEventListener('drop', handleDrop);
     };
-  }, [handleOpenDocxFile, handleOpenPptxFile, handleOpenFile]);
+  }, [handleBatchImportFiles]);
 
   const handlePrintPdf = () => {
     printToPdf(fileName.replace(/\.md$/, ''));
@@ -1264,6 +1480,7 @@ export default function App() {
             onDeleteFolder={handleDeleteFolder}
             onMoveFileToFolder={handleMoveFileToFolder}
             onBatchDeleteFiles={handleBatchDeleteFiles}
+            onBatchImportFiles={handleBatchImportFiles}
 
             activeTool={activeTool}
             onClose={() => setShowFileSidebar(false)}
@@ -1336,6 +1553,7 @@ export default function App() {
                     content={content}
                     onChange={handleContentChange}
                     onDropFile={handleOpenFile}
+                    onDropFiles={handleBatchImportFiles}
                   />
                 )}
 
@@ -1353,6 +1571,7 @@ export default function App() {
                     onPrintPdf={handlePrintPdf}
                     onDirectPdfDownload={handleDirectPdfDownload}
                     onDropFile={handleOpenFile}
+                    onDropFiles={handleBatchImportFiles}
                     isPlayground={viewMode === 'playground'}
                     onTogglePlayground={() => setViewMode(viewMode === 'playground' ? 'preview' : 'playground')}
                     isExportingPdf={isExportingPdf}

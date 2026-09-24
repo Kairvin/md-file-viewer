@@ -63,6 +63,9 @@ export default function FileSidebar({
   // Batch deletion
   onBatchDeleteFiles,
 
+  // Batch import
+  onBatchImportFiles,
+
   // Current active tool
   activeTool = 'markdown', // 'markdown' | 'word' | 'pptx'
 
@@ -311,6 +314,19 @@ export default function FileSidebar({
   const handleDropOnFileOrFolder = (e, targetFolderId, targetCategory) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // 1. External files dropped directly from OS onto this folder
+    const droppedFiles = e.dataTransfer?.files;
+    if (droppedFiles && droppedFiles.length > 0) {
+      if (onBatchImportFiles) {
+        onBatchImportFiles(droppedFiles, targetFolderId);
+      }
+      setDraggedItem(null);
+      setDragOverTarget(null);
+      return;
+    }
+
+    // 2. Internal drag of existing workspace files
     let item = draggedItem;
     if (!item) {
       try {
@@ -329,18 +345,35 @@ export default function FileSidebar({
       return;
     }
 
-    onMoveFileToFolder?.(item.fileId, targetFolderId, targetCategory);
+    const ids = item.fileIds && item.fileIds.length > 0 ? item.fileIds : [item.fileId];
+    onMoveFileToFolder?.(ids, targetFolderId, targetCategory);
     if (targetFolderId) {
       setCollapsedFolders(prev => ({ ...prev, [targetFolderId]: false }));
+    }
+    if (isSelectionMode) {
+      setSelectedFiles(prev => {
+        const next = { ...prev };
+        ids.forEach(id => {
+          delete next[`${targetCategory}:${id}`];
+        });
+        return next;
+      });
     }
     setDraggedItem(null);
     setDragOverTarget(null);
   };
 
   const handleUniversalImport = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
 
+    if (onBatchImportFiles) {
+      onBatchImportFiles(fileList);
+      e.target.value = '';
+      return;
+    }
+
+    const file = fileList[0];
     const lower = file.name.toLowerCase();
     if (lower.endsWith('.docx')) {
       onImportWordFile?.(file);
@@ -472,6 +505,12 @@ export default function FileSidebar({
     const isDragOver = dragOverTarget?.type === 'folder' && dragOverTarget?.id === folder.id;
     const isEditing = editingFolderId === folder.id;
 
+    const accentDropContainerClass = folder.category === 'word'
+      ? 'border-indigo-500 bg-indigo-50/70 dark:bg-indigo-950/50 ring-1 ring-indigo-400/50'
+      : folder.category === 'pptx'
+        ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/50 ring-1 ring-amber-400/50'
+        : 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/50 ring-1 ring-blue-400/50';
+
     return (
       <div key={folder.id} className="space-y-0.5" data-testid={`folder-item-${folder.id}`}>
         <div
@@ -488,8 +527,9 @@ export default function FileSidebar({
             if (!itemCat) {
               itemCat = draggedItem?.category;
             }
+            const hasFiles = e.dataTransfer?.types?.includes('Files');
 
-            if (itemCat === folder.category) {
+            if (itemCat === folder.category || hasFiles) {
               e.preventDefault();
               e.stopPropagation();
               e.dataTransfer.dropEffect = 'move';
@@ -591,9 +631,49 @@ export default function FileSidebar({
         </div>
 
         {!isCollapsed && (
-          <div className="ml-3 pl-2.5 border-l border-slate-200 dark:border-slate-800 space-y-0.5 py-0.5">
+          <div
+            onDragOver={(e) => {
+              let itemCat = null;
+              try {
+                const raw = e.dataTransfer.getData('text/plain');
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  if (parsed?.category) itemCat = parsed.category;
+                }
+              } catch {}
+
+              if (!itemCat) {
+                itemCat = draggedItem?.category;
+              }
+              const hasFiles = e.dataTransfer?.types?.includes('Files');
+
+              if (itemCat === folder.category || hasFiles) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragOverTarget?.id !== folder.id) {
+                  setDragOverTarget({ type: 'folder', id: folder.id, category: folder.category });
+                }
+              }
+            }}
+            onDragLeave={(e) => {
+              e.stopPropagation();
+              if (!e.currentTarget.contains(e.relatedTarget)) {
+                if (dragOverTarget?.id === folder.id) {
+                  setDragOverTarget(null);
+                }
+              }
+            }}
+            onDrop={(e) => handleDropOnFileOrFolder(e, folder.id, folder.category)}
+            className={`ml-3 pl-2.5 border-l-2 space-y-0.5 py-1 rounded-r-xl transition-all ${
+              isDragOver
+                ? accentDropContainerClass
+                : 'border-slate-200 dark:border-slate-800'
+            }`}
+            data-testid={`folder-contents-${folder.id}`}
+          >
             {folderFiles.length === 0 ? (
-              <div className="px-2 py-1 text-[10px] text-slate-400 italic">
+              <div className="px-2 py-2 text-[10px] text-slate-400 italic">
                 Folder is empty (drag files here)
               </div>
             ) : (
@@ -666,7 +746,32 @@ export default function FileSidebar({
             setDragOverTarget(null);
           }
         }}
-        onDrop={(e) => handleDropOnFileOrFolder(e, null, category)}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          let item = draggedItem;
+          if (!item) {
+            try {
+              const raw = e.dataTransfer.getData('text/plain');
+              if (raw) item = JSON.parse(raw);
+            } catch {}
+          }
+          if (item && item.category === category) {
+            const ids = item.fileIds && item.fileIds.length > 0 ? item.fileIds : [item.fileId];
+            onMoveFileToFolder?.(ids, null, category);
+            if (isSelectionMode) {
+              setSelectedFiles(prev => {
+                const next = { ...prev };
+                ids.forEach(id => {
+                  delete next[`${category}:${id}`];
+                });
+                return next;
+              });
+            }
+          }
+          setDraggedItem(null);
+          setDragOverTarget(null);
+        }}
         className={`border-2 border-dashed rounded-xl py-2 px-3 text-center text-[10px] font-medium transition-all my-1.5 cursor-pointer ${
           isDragOver
             ? 'border-blue-500 bg-blue-50/90 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 ring-2 ring-blue-500/20'
@@ -683,7 +788,7 @@ export default function FileSidebar({
   const renderMarkdownCard = (file, isNested = false) => {
     const isActive = activeTool === 'markdown' && file.id === resolvedActiveMdId;
     const isEditing = editingItem?.category === 'markdown' && editingItem?.id === file.id;
-    const isDragging = draggedItem?.fileId === file.id;
+    const isDragging = draggedItem?.fileIds?.includes(file.id) || draggedItem?.fileId === file.id;
     const isSelected = !!selectedFiles[`markdown:${file.id}`];
 
     return (
@@ -691,12 +796,24 @@ export default function FileSidebar({
         key={file.id}
         role="button"
         tabIndex={0}
-        draggable={!isEditing && !isSelectionMode}
+        draggable={!isEditing}
         onDragStart={(e) => {
-          if (isSelectionMode) return;
-          e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: file.id, category: 'markdown' }));
+          const selectedKeys = Object.keys(selectedFiles).filter(k => k.startsWith('markdown:'));
+          const selectedIds = selectedKeys.map(k => k.split(':')[1]);
+          const isCurrentSelected = selectedIds.includes(file.id);
+          const fileIds = (isCurrentSelected && selectedIds.length > 1)
+            ? selectedIds
+            : [file.id];
+
+          const payload = {
+            fileIds,
+            fileId: file.id,
+            category: 'markdown',
+            count: fileIds.length
+          };
+          e.dataTransfer.setData('text/plain', JSON.stringify(payload));
           e.dataTransfer.effectAllowed = 'move';
-          setDraggedItem({ fileId: file.id, category: 'markdown' });
+          setDraggedItem(payload);
         }}
         onDragEnd={() => {
           setDraggedItem(null);
@@ -838,7 +955,7 @@ export default function FileSidebar({
   const renderWordCard = (doc, isNested = false) => {
     const isActive = activeTool === 'word' && doc.id === activeWordId;
     const isEditing = editingItem?.category === 'word' && editingItem?.id === doc.id;
-    const isDragging = draggedItem?.fileId === doc.id;
+    const isDragging = draggedItem?.fileIds?.includes(doc.id) || draggedItem?.fileId === doc.id;
     const isSelected = !!selectedFiles[`word:${doc.id}`];
 
     return (
@@ -846,12 +963,24 @@ export default function FileSidebar({
         key={doc.id}
         role="button"
         tabIndex={0}
-        draggable={!isEditing && !isSelectionMode}
+        draggable={!isEditing}
         onDragStart={(e) => {
-          if (isSelectionMode) return;
-          e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: doc.id, category: 'word' }));
+          const selectedKeys = Object.keys(selectedFiles).filter(k => k.startsWith('word:'));
+          const selectedIds = selectedKeys.map(k => k.split(':')[1]);
+          const isCurrentSelected = selectedIds.includes(doc.id);
+          const fileIds = (isCurrentSelected && selectedIds.length > 1)
+            ? selectedIds
+            : [doc.id];
+
+          const payload = {
+            fileIds,
+            fileId: doc.id,
+            category: 'word',
+            count: fileIds.length
+          };
+          e.dataTransfer.setData('text/plain', JSON.stringify(payload));
           e.dataTransfer.effectAllowed = 'move';
-          setDraggedItem({ fileId: doc.id, category: 'word' });
+          setDraggedItem(payload);
         }}
         onDragEnd={() => {
           setDraggedItem(null);
@@ -981,7 +1110,7 @@ export default function FileSidebar({
   const renderPptxCard = (deck, isNested = false) => {
     const isActive = activeTool === 'pptx' && deck.id === activePptxId;
     const isEditing = editingItem?.category === 'pptx' && editingItem?.id === deck.id;
-    const isDragging = draggedItem?.fileId === deck.id;
+    const isDragging = draggedItem?.fileIds?.includes(deck.id) || draggedItem?.fileId === deck.id;
     const isSelected = !!selectedFiles[`pptx:${deck.id}`];
 
     return (
@@ -989,12 +1118,24 @@ export default function FileSidebar({
         key={deck.id}
         role="button"
         tabIndex={0}
-        draggable={!isEditing && !isSelectionMode}
+        draggable={!isEditing}
         onDragStart={(e) => {
-          if (isSelectionMode) return;
-          e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: deck.id, category: 'pptx' }));
+          const selectedKeys = Object.keys(selectedFiles).filter(k => k.startsWith('pptx:'));
+          const selectedIds = selectedKeys.map(k => k.split(':')[1]);
+          const isCurrentSelected = selectedIds.includes(deck.id);
+          const fileIds = (isCurrentSelected && selectedIds.length > 1)
+            ? selectedIds
+            : [deck.id];
+
+          const payload = {
+            fileIds,
+            fileId: deck.id,
+            category: 'pptx',
+            count: fileIds.length
+          };
+          e.dataTransfer.setData('text/plain', JSON.stringify(payload));
           e.dataTransfer.effectAllowed = 'move';
-          setDraggedItem({ fileId: deck.id, category: 'pptx' });
+          setDraggedItem(payload);
         }}
         onDragEnd={() => {
           setDraggedItem(null);
@@ -1138,6 +1279,7 @@ export default function FileSidebar({
         <input 
           type="file" 
           ref={anyInputRef} 
+          multiple
           onChange={handleUniversalImport} 
           accept=".md,.markdown,.txt,.docx,.pptx" 
           className="hidden" 
@@ -1145,9 +1287,16 @@ export default function FileSidebar({
         <input 
           type="file" 
           ref={docxInputRef} 
+          multiple
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onImportWordFile?.(f);
+            const files = e.target.files;
+            if (files && files.length > 0) {
+              if (onBatchImportFiles) {
+                onBatchImportFiles(files);
+              } else {
+                onImportWordFile?.(files[0]);
+              }
+            }
             e.target.value = '';
           }} 
           accept=".docx" 
@@ -1156,9 +1305,16 @@ export default function FileSidebar({
         <input 
           type="file" 
           ref={pptxInputRef} 
+          multiple
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onImportPptxFile?.(f);
+            const files = e.target.files;
+            if (files && files.length > 0) {
+              if (onBatchImportFiles) {
+                onBatchImportFiles(files);
+              } else {
+                onImportPptxFile?.(files[0]);
+              }
+            }
             e.target.value = '';
           }} 
           accept=".pptx" 

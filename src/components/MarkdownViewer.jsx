@@ -746,6 +746,7 @@ export default function MarkdownViewer({
   onPrintPdf,
   onDirectPdfDownload,
   onDropFile,
+  onDropFiles,
   isPlayground = false,
   onTogglePlayground,
   isExportingPdf = false,
@@ -1796,7 +1797,15 @@ export default function MarkdownViewer({
 
   const handleDrop = (e) => {
     e.preventDefault();
-    const file = e.dataTransfer.files?.[0];
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    if (onDropFiles) {
+      onDropFiles(files);
+      return;
+    }
+
+    const file = files[0];
     if (file && onDropFile) {
       const isText = file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt') || (file.type && file.type.startsWith('text/'));
       if (!isText) {

@@ -69,6 +69,7 @@ export default function ConfirmModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
+      data-testid="in-app-alert-modal"
     >
       {/* Backdrop with modern blur */}
       <div 
@@ -87,6 +88,7 @@ export default function ConfirmModal({
           onClick={handleBackdropClick}
           className="absolute top-4 right-4 p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           title="Close (Esc)"
+          data-testid="alert-close-btn"
         >
           <X className="w-4 h-4" />
         </button>
@@ -148,6 +150,7 @@ export default function ConfirmModal({
               type="button"
               onClick={onCancel}
               className="px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 transition-colors shadow-2xs active:scale-95 cursor-pointer"
+              data-testid="alert-cancel-btn"
             >
               {cancelLabel}
             </button>
@@ -157,6 +160,7 @@ export default function ConfirmModal({
             ref={primaryBtnRef}
             type="button"
             onClick={onConfirm || onCancel}
+            data-testid="alert-confirm-btn"
             className={`px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium text-white transition-all shadow-xs flex items-center gap-1.5 active:scale-95 cursor-pointer ${
               isDanger
                 ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800'
