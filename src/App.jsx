@@ -700,13 +700,25 @@ export default function App() {
   };
 
   const handleOpenFile = (name, text) => {
-    const openDoc = () => {
-      const formattedName = name.endsWith('.md') || name.endsWith('.txt') || name.endsWith('.markdown') ? name : `${name}.md`;
-      const existing = files.find(f => f.name.toLowerCase() === formattedName.toLowerCase());
-      if (existing) {
-        setFiles(prev => prev.map(f => f.id === existing.id ? { ...f, content: text, updatedAt: Date.now() } : f));
+    const formattedName = name.endsWith('.md') || name.endsWith('.txt') || name.endsWith('.markdown') ? name : `${name}.md`;
+    const existing = files.find(f => f.name.toLowerCase() === formattedName.toLowerCase());
+
+    const openDoc = (replaceExisting = false) => {
+      if (existing && replaceExisting) {
+        try {
+          localStorage.removeItem(`md_playground_saved_${existing.name}`);
+        } catch (e) {}
+
+        setFiles(prev => {
+          const next = prev.map(f => f.id === existing.id ? { ...f, content: text, updatedAt: Date.now() } : f);
+          try { localStorage.setItem('md_files_library', JSON.stringify(next)); } catch {}
+          return next;
+        });
         setActiveFileId(existing.id);
-      } else {
+        setActiveTool('markdown');
+        setHasPlaygroundEdits(false);
+        showInAppAlert(`Replaced "${formattedName}" with imported version.`, 'File Replaced', 'info');
+      } else if (!existing) {
         const id = `file-${Date.now()}`;
         const newDoc = {
           id,
@@ -715,11 +727,52 @@ export default function App() {
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
-        setFiles(prev => [newDoc, ...prev]);
+        setFiles(prev => {
+          const next = [newDoc, ...prev];
+          try { localStorage.setItem('md_files_library', JSON.stringify(next)); } catch {}
+          return next;
+        });
         setActiveFileId(id);
+        setActiveTool('markdown');
+        setHasPlaygroundEdits(false);
       }
-      setHasPlaygroundEdits(false);
     };
+
+    if (existing) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'File Already Exists',
+        fileName: formattedName,
+        message: `A file named "${formattedName}" already exists. Do you want to replace it?`,
+        confirmLabel: 'Yes, Replace',
+        cancelLabel: 'No',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          if (hasPlaygroundEdits) {
+            setConfirmModal({
+              isOpen: true,
+              title: 'Unsaved Changes in Playground',
+              fileName: activeFile.name,
+              message: 'You have unsaved changes in Playground. Replacing this file will discard your unsaved edits.',
+              confirmLabel: 'Discard & Replace',
+              cancelLabel: 'Keep Editing',
+              variant: 'warning',
+              onConfirm: () => {
+                closeConfirmModal();
+                openDoc(true);
+              }
+            });
+            return;
+          }
+          openDoc(true);
+        },
+        onCancel: () => {
+          closeConfirmModal();
+        }
+      });
+      return;
+    }
 
     if (hasPlaygroundEdits) {
       setConfirmModal({
@@ -732,12 +785,12 @@ export default function App() {
         variant: 'warning',
         onConfirm: () => {
           closeConfirmModal();
-          openDoc();
+          openDoc(false);
         }
       });
       return;
     }
-    openDoc();
+    openDoc(false);
   };
 
   const handleLoadSample = (type) => {
@@ -879,39 +932,76 @@ export default function App() {
   // Open & Parse Word (.docx) file
   const handleOpenDocxFile = useCallback(async (file) => {
     if (!file) return;
-    try {
-      const result = await parseDocxFile(file);
-      if (result.success) {
-        const docId = 'docx-' + Date.now();
-        const newDoc = { id: docId, name: file.name, html: result.html, format: 'docx' };
-        
-        await setStorageItem('documents', docId, newDoc);
 
-        const newMeta = {
-          id: docId,
-          name: file.name,
-          format: 'docx',
-          updatedAt: Date.now(),
-        };
+    const existing = wordFiles.find(f => f.name.toLowerCase() === file.name.toLowerCase());
 
-        setWordFiles(prev => {
-          const next = [newMeta, ...prev.filter(f => f.name !== file.name)];
-          try { localStorage.setItem('docx_files_library', JSON.stringify(next)); } catch {}
-          return next;
-        });
+    const proceedParse = async (replace = false) => {
+      try {
+        const result = await parseDocxFile(file);
+        if (result.success) {
+          const docId = (existing && replace) ? existing.id : 'docx-' + Date.now();
+          const folderId = (existing && replace) ? existing.folderId : null;
+          const newDoc = { id: docId, name: file.name, html: result.html, format: 'docx', folderId };
+          
+          await setStorageItem('documents', docId, newDoc);
 
-        setActiveWordId(docId);
-        setWordData({ fileName: file.name, html: result.html });
-        try { localStorage.setItem('docx_active_doc', JSON.stringify({ fileName: file.name, html: result.html })); } catch {}
-        setActiveTool('word');
-        showInAppAlert(`Loaded Word document "${file.name}" with ${result.stats?.words || 0} words.`, 'Word File Ready', 'info');
-      } else {
-        showInAppAlert(result.error || 'Failed to parse Word document.', 'Word File Error', 'danger');
+          const newMeta = {
+            id: docId,
+            name: file.name,
+            format: 'docx',
+            folderId,
+            updatedAt: Date.now(),
+          };
+
+          setWordFiles(prev => {
+            const next = (existing && replace)
+              ? prev.map(f => f.id === docId ? newMeta : f)
+              : [newMeta, ...prev.filter(f => f.name.toLowerCase() !== file.name.toLowerCase())];
+            try { localStorage.setItem('docx_files_library', JSON.stringify(next)); } catch {}
+            return next;
+          });
+
+          setActiveWordId(docId);
+          setWordData({ fileName: file.name, html: result.html });
+          try { localStorage.setItem('docx_active_doc', JSON.stringify({ fileName: file.name, html: result.html })); } catch {}
+          setActiveTool('word');
+          showInAppAlert(
+            (existing && replace)
+              ? `Replaced Word document "${file.name}".`
+              : `Loaded Word document "${file.name}" with ${result.stats?.words || 0} words.`,
+            'Word File Ready',
+            'info'
+          );
+        } else {
+          showInAppAlert(result.error || 'Failed to parse Word document.', 'Word File Error', 'danger');
+        }
+      } catch (err) {
+        showInAppAlert(err.message || 'Error reading Word file.', 'Word File Error', 'danger');
       }
-    } catch (err) {
-      showInAppAlert(err.message || 'Error reading Word file.', 'Word File Error', 'danger');
+    };
+
+    if (existing) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'File Already Exists',
+        fileName: file.name,
+        message: `A Word document named "${file.name}" already exists. Do you want to replace it?`,
+        confirmLabel: 'Yes, Replace',
+        cancelLabel: 'No',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          proceedParse(true);
+        },
+        onCancel: () => {
+          closeConfirmModal();
+        }
+      });
+      return;
     }
-  }, []);
+
+    proceedParse(false);
+  }, [wordFiles, closeConfirmModal]);
 
   // Select PowerPoint Deck from library
   const handleSelectPptxFile = useCallback(async (deckId) => {
@@ -1114,43 +1204,79 @@ export default function App() {
   // Open & Parse PowerPoint (.pptx) file
   const handleOpenPptxFile = useCallback(async (file) => {
     if (!file) return;
-    try {
-      // Clear any prior draft for this presentation name so stale drafts never overwrite clean slides
-      await clearPlaygroundDraft('pptx_draft_' + file.name);
 
-      const result = await parsePptxFile(file);
-      if (result.success) {
-        const deckId = 'pptx-' + Date.now();
-        const newDeck = { id: deckId, name: file.name, slides: result.slides, format: 'pptx' };
+    const existing = pptxFiles.find(f => f.name.toLowerCase() === file.name.toLowerCase());
 
-        await setStorageItem('documents', deckId, newDeck);
+    const proceedParse = async (replace = false) => {
+      try {
+        await clearPlaygroundDraft('pptx_draft_' + file.name);
 
-        const newMeta = {
-          id: deckId,
-          name: file.name,
-          format: 'pptx',
-          slideCount: result.slides?.length || 0,
-          updatedAt: Date.now(),
-        };
+        const result = await parsePptxFile(file);
+        if (result.success) {
+          const deckId = (existing && replace) ? existing.id : 'pptx-' + Date.now();
+          const folderId = (existing && replace) ? existing.folderId : null;
+          const newDeck = { id: deckId, name: file.name, slides: result.slides, format: 'pptx', folderId };
 
-        setPptxFiles(prev => {
-          const next = [newMeta, ...prev.filter(f => f.name !== file.name)];
-          try { localStorage.setItem('pptx_files_library', JSON.stringify(next)); } catch {}
-          return next;
-        });
+          await setStorageItem('documents', deckId, newDeck);
 
-        setActivePptxId(deckId);
-        setPptxData({ fileName: file.name, slides: result.slides });
-        try { localStorage.setItem('pptx_active_deck', JSON.stringify({ fileName: file.name, slides: result.slides })); } catch {}
-        setActiveTool('pptx');
-        showInAppAlert(`Loaded PowerPoint presentation "${file.name}" with ${result.slides?.length || 0} slides.`, 'PowerPoint Ready', 'info');
-      } else {
-        showInAppAlert(result.error || 'Failed to parse PowerPoint presentation.', 'PowerPoint Error', 'danger');
+          const newMeta = {
+            id: deckId,
+            name: file.name,
+            format: 'pptx',
+            slideCount: result.slides?.length || 0,
+            folderId,
+            updatedAt: Date.now(),
+          };
+
+          setPptxFiles(prev => {
+            const next = (existing && replace)
+              ? prev.map(f => f.id === deckId ? newMeta : f)
+              : [newMeta, ...prev.filter(f => f.name.toLowerCase() !== file.name.toLowerCase())];
+            try { localStorage.setItem('pptx_files_library', JSON.stringify(next)); } catch {}
+            return next;
+          });
+
+          setActivePptxId(deckId);
+          setPptxData({ fileName: file.name, slides: result.slides });
+          try { localStorage.setItem('pptx_active_deck', JSON.stringify({ fileName: file.name, slides: result.slides })); } catch {}
+          setActiveTool('pptx');
+          showInAppAlert(
+            (existing && replace)
+              ? `Replaced PowerPoint presentation "${file.name}".`
+              : `Loaded PowerPoint presentation "${file.name}" with ${result.slides?.length || 0} slides.`,
+            'PowerPoint Ready',
+            'info'
+          );
+        } else {
+          showInAppAlert(result.error || 'Failed to parse PowerPoint presentation.', 'PowerPoint Error', 'danger');
+        }
+      } catch (err) {
+        showInAppAlert(err.message || 'Error reading PowerPoint file.', 'PowerPoint Error', 'danger');
       }
-    } catch (err) {
-      showInAppAlert(err.message || 'Error reading PowerPoint file.', 'PowerPoint Error', 'danger');
+    };
+
+    if (existing) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'File Already Exists',
+        fileName: file.name,
+        message: `A PowerPoint presentation named "${file.name}" already exists. Do you want to replace it?`,
+        confirmLabel: 'Yes, Replace',
+        cancelLabel: 'No',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          proceedParse(true);
+        },
+        onCancel: () => {
+          closeConfirmModal();
+        }
+      });
+      return;
     }
-  }, []);
+
+    proceedParse(false);
+  }, [pptxFiles, closeConfirmModal]);
 
 
   // Load Sample PPTX Deck
@@ -1221,7 +1347,7 @@ export default function App() {
   // Batch Import Markdown Files
   const handleBatchImportMarkdown = useCallback(async (fileList, targetFolderId = null) => {
     const filesArray = Array.from(fileList);
-    const newDocs = [];
+    const parsedDocs = [];
     const now = Date.now();
 
     for (let i = 0; i < filesArray.length; i++) {
@@ -1229,142 +1355,316 @@ export default function App() {
       try {
         const text = await f.text();
         const formattedName = f.name.endsWith('.md') || f.name.endsWith('.txt') || f.name.endsWith('.markdown') ? f.name : `${f.name}.md`;
-        newDocs.push({
-          id: `file-${now}-${i}`,
+        parsedDocs.push({
           name: formattedName,
           content: text,
-          folderId: targetFolderId || null,
-          createdAt: now + i,
-          updatedAt: now + i,
         });
       } catch (err) {
         console.error(`Failed to read markdown file "${f.name}":`, err);
       }
     }
 
-    if (newDocs.length === 0) return;
+    if (parsedDocs.length === 0) return;
 
-    setFiles(prev => {
-      const newNames = new Set(newDocs.map(d => d.name.toLowerCase()));
-      const filteredPrev = prev.filter(p => !newNames.has(p.name.toLowerCase()));
-      const next = [...newDocs, ...filteredPrev];
-      try { localStorage.setItem('md_files_library', JSON.stringify(next)); } catch {}
-      return next;
-    });
-
-    setActiveFileId(newDocs[0].id);
-    setActiveTool('markdown');
-    setHasPlaygroundEdits(false);
-    showInAppAlert(
-      `Successfully imported ${newDocs.length} Markdown ${newDocs.length === 1 ? 'file' : 'files'}.`,
-      'Files Imported',
-      'info'
+    const existingDuplicates = parsedDocs.filter(doc =>
+      files.some(f => f.name.toLowerCase() === doc.name.toLowerCase())
     );
-  }, []);
+
+    const performImport = (replaceDuplicates = false) => {
+      const docsToProcess = replaceDuplicates
+        ? parsedDocs
+        : parsedDocs.filter(doc => !files.some(f => f.name.toLowerCase() === doc.name.toLowerCase()));
+
+      if (docsToProcess.length === 0) return;
+
+      let firstActiveId = null;
+
+      setFiles(prev => {
+        let next = [...prev];
+        const newDocsToAdd = [];
+
+        docsToProcess.forEach((doc, idx) => {
+          const existingIndex = next.findIndex(f => f.name.toLowerCase() === doc.name.toLowerCase());
+          if (existingIndex !== -1 && replaceDuplicates) {
+            const existing = next[existingIndex];
+            try {
+              localStorage.removeItem(`md_playground_saved_${existing.name}`);
+            } catch (e) {}
+
+            next[existingIndex] = {
+              ...existing,
+              content: doc.content,
+              folderId: targetFolderId !== null ? targetFolderId : existing.folderId,
+              updatedAt: now + idx,
+            };
+            if (!firstActiveId) firstActiveId = existing.id;
+          } else if (existingIndex === -1) {
+            const newId = `file-${now}-${idx}`;
+            newDocsToAdd.push({
+              id: newId,
+              name: doc.name,
+              content: doc.content,
+              folderId: targetFolderId || null,
+              createdAt: now + idx,
+              updatedAt: now + idx,
+            });
+            if (!firstActiveId) firstActiveId = newId;
+          }
+        });
+
+        const finalList = [...newDocsToAdd, ...next];
+        try { localStorage.setItem('md_files_library', JSON.stringify(finalList)); } catch {}
+        return finalList;
+      });
+
+      if (firstActiveId) {
+        setActiveFileId(firstActiveId);
+      }
+      setActiveTool('markdown');
+      setHasPlaygroundEdits(false);
+      showInAppAlert(
+        `Successfully imported ${docsToProcess.length} Markdown ${docsToProcess.length === 1 ? 'file' : 'files'}.`,
+        'Files Imported',
+        'info'
+      );
+    };
+
+    if (existingDuplicates.length > 0) {
+      const isSingle = existingDuplicates.length === 1;
+      const dupName = existingDuplicates[0].name;
+      setConfirmModal({
+        isOpen: true,
+        title: 'File Already Exists',
+        fileName: isSingle ? dupName : `${existingDuplicates.length} files`,
+        message: isSingle
+          ? `A file named "${dupName}" already exists. Do you want to replace it?`
+          : `${existingDuplicates.length} files (${existingDuplicates.map(d => `"${d.name}"`).join(', ')}) already exist. Do you want to replace them?`,
+        confirmLabel: 'Yes, Replace',
+        cancelLabel: 'No',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          performImport(true);
+        },
+        onCancel: () => {
+          closeConfirmModal();
+          const nonDuplicates = parsedDocs.filter(doc => !files.some(f => f.name.toLowerCase() === doc.name.toLowerCase()));
+          if (nonDuplicates.length > 0) {
+            performImport(false);
+          }
+        }
+      });
+      return;
+    }
+
+    performImport(false);
+  }, [files, closeConfirmModal]);
 
   // Batch Import Word Files
   const handleBatchImportWord = useCallback(async (fileList, targetFolderId = null) => {
     const filesArray = Array.from(fileList);
-    const newDocs = [];
-    const now = Date.now();
+    const duplicates = filesArray.filter(f => wordFiles.some(w => w.name.toLowerCase() === f.name.toLowerCase()));
 
-    for (let i = 0; i < filesArray.length; i++) {
-      const f = filesArray[i];
-      try {
-        const result = await parseDocxFile(f);
-        if (result.success) {
-          const docId = `docx-${now}-${i}`;
-          const newDoc = { id: docId, name: f.name, html: result.html, format: 'docx', folderId: targetFolderId || null };
-          await setStorageItem('documents', docId, newDoc);
+    const performImport = async (replaceDuplicates = false) => {
+      const docsToProcess = replaceDuplicates
+        ? filesArray
+        : filesArray.filter(f => !wordFiles.some(w => w.name.toLowerCase() === f.name.toLowerCase()));
 
-          newDocs.push({
-            id: docId,
-            name: f.name,
-            format: 'docx',
-            folderId: targetFolderId || null,
-            updatedAt: now + i,
-            html: result.html
-          });
+      if (docsToProcess.length === 0) return;
+
+      const newDocs = [];
+      const now = Date.now();
+
+      for (let i = 0; i < docsToProcess.length; i++) {
+        const f = docsToProcess[i];
+        try {
+          const result = await parseDocxFile(f);
+          if (result.success) {
+            const existing = wordFiles.find(w => w.name.toLowerCase() === f.name.toLowerCase());
+            const docId = (existing && replaceDuplicates) ? existing.id : `docx-${now}-${i}`;
+            const folder = (existing && replaceDuplicates && targetFolderId === null) ? existing.folderId : (targetFolderId || null);
+
+            const docData = { id: docId, name: f.name, html: result.html, format: 'docx', folderId: folder };
+            await setStorageItem('documents', docId, docData);
+
+            newDocs.push({
+              id: docId,
+              name: f.name,
+              format: 'docx',
+              folderId: folder,
+              updatedAt: now + i,
+              html: result.html
+            });
+          }
+        } catch (err) {
+          console.error(`Failed to parse Word file "${f.name}":`, err);
         }
-      } catch (err) {
-        console.error(`Failed to parse Word file "${f.name}":`, err);
       }
+
+      if (newDocs.length === 0) return;
+
+      setWordFiles(prev => {
+        let next = [...prev];
+        const added = [];
+        newDocs.forEach(d => {
+          const idx = next.findIndex(w => w.id === d.id || w.name.toLowerCase() === d.name.toLowerCase());
+          if (idx !== -1) {
+            next[idx] = { id: d.id, name: d.name, format: d.format, folderId: d.folderId, updatedAt: d.updatedAt };
+          } else {
+            added.push({ id: d.id, name: d.name, format: d.format, folderId: d.folderId, updatedAt: d.updatedAt });
+          }
+        });
+        const finalWordList = [...added, ...next];
+        try { localStorage.setItem('docx_files_library', JSON.stringify(finalWordList)); } catch {}
+        return finalWordList;
+      });
+
+      const primaryDoc = newDocs[0];
+      setActiveWordId(primaryDoc.id);
+      setWordData({ fileName: primaryDoc.name, html: primaryDoc.html });
+      try { localStorage.setItem('docx_active_doc', JSON.stringify({ fileName: primaryDoc.name, html: primaryDoc.html })); } catch {}
+      setActiveTool('word');
+      showInAppAlert(
+        `Successfully imported ${newDocs.length} Word ${newDocs.length === 1 ? 'document' : 'documents'}.`,
+        'Word Documents Ready',
+        'info'
+      );
+    };
+
+    if (duplicates.length > 0) {
+      const isSingle = duplicates.length === 1;
+      const dupName = duplicates[0].name;
+      setConfirmModal({
+        isOpen: true,
+        title: 'File Already Exists',
+        fileName: isSingle ? dupName : `${duplicates.length} files`,
+        message: isSingle
+          ? `A Word document named "${dupName}" already exists. Do you want to replace it?`
+          : `${duplicates.length} Word documents (${duplicates.map(d => `"${d.name}"`).join(', ')}) already exist. Do you want to replace them?`,
+        confirmLabel: 'Yes, Replace',
+        cancelLabel: 'No',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          performImport(true);
+        },
+        onCancel: () => {
+          closeConfirmModal();
+          const nonDuplicates = filesArray.filter(f => !wordFiles.some(w => w.name.toLowerCase() === f.name.toLowerCase()));
+          if (nonDuplicates.length > 0) {
+            performImport(false);
+          }
+        }
+      });
+      return;
     }
 
-    if (newDocs.length === 0) return;
-
-    setWordFiles(prev => {
-      const newNames = new Set(newDocs.map(d => d.name));
-      const filteredPrev = prev.filter(p => !newNames.has(p.name));
-      const next = [...newDocs.map(d => ({ id: d.id, name: d.name, format: d.format, folderId: d.folderId, updatedAt: d.updatedAt })), ...filteredPrev];
-      try { localStorage.setItem('docx_files_library', JSON.stringify(next)); } catch {}
-      return next;
-    });
-
-    const primaryDoc = newDocs[0];
-    setActiveWordId(primaryDoc.id);
-    setWordData({ fileName: primaryDoc.name, html: primaryDoc.html });
-    try { localStorage.setItem('docx_active_doc', JSON.stringify({ fileName: primaryDoc.name, html: primaryDoc.html })); } catch {}
-    setActiveTool('word');
-    showInAppAlert(
-      `Successfully imported ${newDocs.length} Word ${newDocs.length === 1 ? 'document' : 'documents'}.`,
-      'Word Documents Ready',
-      'info'
-    );
-  }, []);
+    performImport(false);
+  }, [wordFiles, closeConfirmModal]);
 
   // Batch Import PowerPoint Files
   const handleBatchImportPptx = useCallback(async (fileList, targetFolderId = null) => {
     const filesArray = Array.from(fileList);
-    const newDecks = [];
-    const now = Date.now();
+    const duplicates = filesArray.filter(f => pptxFiles.some(p => p.name.toLowerCase() === f.name.toLowerCase()));
 
-    for (let i = 0; i < filesArray.length; i++) {
-      const f = filesArray[i];
-      try {
-        await clearPlaygroundDraft('pptx_draft_' + f.name);
-        const result = await parsePptxFile(f);
-        if (result.success) {
-          const deckId = `pptx-${now}-${i}`;
-          const newDeck = { id: deckId, name: f.name, slides: result.slides, format: 'pptx', folderId: targetFolderId || null };
-          await setStorageItem('documents', deckId, newDeck);
+    const performImport = async (replaceDuplicates = false) => {
+      const docsToProcess = replaceDuplicates
+        ? filesArray
+        : filesArray.filter(f => !pptxFiles.some(p => p.name.toLowerCase() === f.name.toLowerCase()));
 
-          newDecks.push({
-            id: deckId,
-            name: f.name,
-            format: 'pptx',
-            slideCount: result.slides?.length || 0,
-            folderId: targetFolderId || null,
-            updatedAt: now + i,
-            slides: result.slides
-          });
+      if (docsToProcess.length === 0) return;
+
+      const newDecks = [];
+      const now = Date.now();
+
+      for (let i = 0; i < docsToProcess.length; i++) {
+        const f = docsToProcess[i];
+        try {
+          await clearPlaygroundDraft('pptx_draft_' + f.name);
+          const result = await parsePptxFile(f);
+          if (result.success) {
+            const existing = pptxFiles.find(p => p.name.toLowerCase() === f.name.toLowerCase());
+            const deckId = (existing && replaceDuplicates) ? existing.id : `pptx-${now}-${i}`;
+            const folder = (existing && replaceDuplicates && targetFolderId === null) ? existing.folderId : (targetFolderId || null);
+
+            const deckData = { id: deckId, name: f.name, slides: result.slides, format: 'pptx', folderId: folder };
+            await setStorageItem('documents', deckId, deckData);
+
+            newDecks.push({
+              id: deckId,
+              name: f.name,
+              format: 'pptx',
+              slideCount: result.slides?.length || 0,
+              folderId: folder,
+              updatedAt: now + i,
+              slides: result.slides,
+            });
+          }
+        } catch (err) {
+          console.error(`Failed to parse PowerPoint file "${f.name}":`, err);
         }
-      } catch (err) {
-        console.error(`Failed to parse PowerPoint file "${f.name}":`, err);
       }
+
+      if (newDecks.length === 0) return;
+
+      setPptxFiles(prev => {
+        let next = [...prev];
+        const added = [];
+        newDecks.forEach(d => {
+          const idx = next.findIndex(p => p.id === d.id || p.name.toLowerCase() === d.name.toLowerCase());
+          if (idx !== -1) {
+            next[idx] = { id: d.id, name: d.name, format: d.format, slideCount: d.slideCount, folderId: d.folderId, updatedAt: d.updatedAt };
+          } else {
+            added.push({ id: d.id, name: d.name, format: d.format, slideCount: d.slideCount, folderId: d.folderId, updatedAt: d.updatedAt });
+          }
+        });
+        const finalPptxList = [...added, ...next];
+        try { localStorage.setItem('pptx_files_library', JSON.stringify(finalPptxList)); } catch {}
+        return finalPptxList;
+      });
+
+      const primaryDeck = newDecks[0];
+      setActivePptxId(primaryDeck.id);
+      setPptxData({ fileName: primaryDeck.name, slides: primaryDeck.slides });
+      try { localStorage.setItem('pptx_active_deck', JSON.stringify({ fileName: primaryDeck.name, slides: primaryDeck.slides })); } catch {}
+      setActiveTool('pptx');
+      showInAppAlert(
+        `Successfully imported ${newDecks.length} PowerPoint ${newDecks.length === 1 ? 'presentation' : 'presentations'}.`,
+        'PowerPoint Ready',
+        'info'
+      );
+    };
+
+    if (duplicates.length > 0) {
+      const isSingle = duplicates.length === 1;
+      const dupName = duplicates[0].name;
+      setConfirmModal({
+        isOpen: true,
+        title: 'File Already Exists',
+        fileName: isSingle ? dupName : `${duplicates.length} files`,
+        message: isSingle
+          ? `A PowerPoint presentation named "${dupName}" already exists. Do you want to replace it?`
+          : `${duplicates.length} PowerPoint presentations (${duplicates.map(d => `"${d.name}"`).join(', ')}) already exist. Do you want to replace them?`,
+        confirmLabel: 'Yes, Replace',
+        cancelLabel: 'No',
+        variant: 'warning',
+        onConfirm: () => {
+          closeConfirmModal();
+          performImport(true);
+        },
+        onCancel: () => {
+          closeConfirmModal();
+          const nonDuplicates = filesArray.filter(f => !pptxFiles.some(p => p.name.toLowerCase() === f.name.toLowerCase()));
+          if (nonDuplicates.length > 0) {
+            performImport(false);
+          }
+        }
+      });
+      return;
     }
 
-    if (newDecks.length === 0) return;
-
-    setPptxFiles(prev => {
-      const newNames = new Set(newDecks.map(d => d.name));
-      const filteredPrev = prev.filter(p => !newNames.has(p.name));
-      const next = [...newDecks.map(d => ({ id: d.id, name: d.name, format: d.format, slideCount: d.slideCount, folderId: d.folderId, updatedAt: d.updatedAt })), ...filteredPrev];
-      try { localStorage.setItem('pptx_files_library', JSON.stringify(next)); } catch {}
-      return next;
-    });
-
-    const primaryDeck = newDecks[0];
-    setActivePptxId(primaryDeck.id);
-    setPptxData({ fileName: primaryDeck.name, slides: primaryDeck.slides });
-    try { localStorage.setItem('pptx_active_deck', JSON.stringify({ fileName: primaryDeck.name, slides: primaryDeck.slides })); } catch {}
-    setActiveTool('pptx');
-    showInAppAlert(
-      `Successfully imported ${newDecks.length} PowerPoint ${newDecks.length === 1 ? 'presentation' : 'presentations'}.`,
-      'PowerPoint Ready',
-      'info'
-    );
-  }, []);
+    performImport(false);
+  }, [pptxFiles, closeConfirmModal]);
 
   // Main Unified Batch Importer
   const handleBatchImportFiles = useCallback((fileList, targetFolderId = null) => {
@@ -1626,7 +1926,10 @@ export default function App() {
         variant={confirmModal.variant}
         isAlert={confirmModal.isAlert}
         onConfirm={confirmModal.onConfirm}
-        onCancel={closeConfirmModal}
+        onCancel={() => {
+          confirmModal.onCancel?.();
+          closeConfirmModal();
+        }}
       />
     </div>
   );
