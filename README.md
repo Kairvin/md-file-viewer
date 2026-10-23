@@ -65,7 +65,7 @@
 
 ### 1. Run Development Server
 ```bash
-git clone https://github.com/kairvin/md-review-pro.git
+git clone https://github.com/Kairvin/md-file-viewer.git
 cd md-review-pro
 npm install
 npm run dev
