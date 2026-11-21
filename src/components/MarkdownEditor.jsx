@@ -1,8 +1,19 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { FileCode, UploadCloud } from 'lucide-react';
 
-export default function MarkdownEditor({ content, onChange, onDropFile, onDropFiles }) {
+export default function MarkdownEditor({ content, onChange, onDropFile, onDropFiles, fileId, fileResetToken }) {
   const lineCount = content.split('\n').length;
+  const textareaRef = useRef(null);
+
+  // When switching files, reset the editor scroll position and cursor to the top
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.scrollTop = 0;
+      try {
+        textareaRef.current.setSelectionRange(0, 0);
+      } catch (e) {}
+    }
+  }, [fileId, fileResetToken]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -56,6 +67,7 @@ export default function MarkdownEditor({ content, onChange, onDropFile, onDropFi
 
         {/* Textarea */}
         <textarea
+          ref={textareaRef}
           value={content}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Type or paste Markdown here, or drag & drop a .md file..."

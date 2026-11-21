@@ -286,6 +286,7 @@ export default function PptxViewer({
   const historyIndexRef = useRef(-1);
 
   const containerRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const flowContainerRef = useRef(null);
   const deckContainerRef = useRef(null);
   const allSlidesExportRef = useRef(null);
@@ -294,6 +295,13 @@ export default function PptxViewer({
   const savedRangeRef = useRef(null);
   const autoSaveTimerRef = useRef(null);
   const inputDebounceTimerRef = useRef(null);
+
+  // Reset scroll to top when switching presentation files
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [fileName]);
 
   const draftKey = `pptx_draft_${fileName}`;
 
@@ -1294,7 +1302,10 @@ export default function PptxViewer({
       )}
 
       {/* Main Slide Workspace */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex flex-col items-center">
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-4 sm:p-8 flex flex-col items-center"
+      >
         {slides.length === 0 ? (
           <div className="my-auto text-center py-16 px-4 max-w-md">
             <div className="w-16 h-16 rounded-2xl bg-orange-500/10 text-orange-600 dark:text-orange-400 mx-auto flex items-center justify-center mb-4 border border-orange-500/20">

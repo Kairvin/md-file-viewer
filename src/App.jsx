@@ -151,6 +151,8 @@ export default function App() {
     return localStorage.getItem('md_active_file_id') || 'sample-showcase';
   });
 
+  const [fileResetToken, setFileResetToken] = useState(0);
+
   const [showFileSidebar, setShowFileSidebar] = useState(() => {
     return typeof window !== 'undefined' && window.innerWidth >= 1024;
   });
@@ -588,7 +590,10 @@ export default function App() {
 
   const handleSelectFile = (fileId) => {
     setActiveTool('markdown');
-    if (fileId === activeFile.id) return;
+    if (fileId === activeFile.id) {
+      setFileResetToken(t => t + 1);
+      return;
+    }
     if (hasPlaygroundEdits) {
       setConfirmModal({
         isOpen: true,
@@ -601,12 +606,14 @@ export default function App() {
         onConfirm: () => {
           setHasPlaygroundEdits(false);
           setActiveFileId(fileId);
+          setFileResetToken(t => t + 1);
           closeConfirmModal();
         }
       });
       return;
     }
     setActiveFileId(fileId);
+    setFileResetToken(t => t + 1);
   };
 
   const handleNewFile = () => {
@@ -626,6 +633,7 @@ export default function App() {
 
       setFiles(prev => [newDoc, ...prev]);
       setActiveFileId(id);
+      setFileResetToken(t => t + 1);
       setHasPlaygroundEdits(false);
       if (viewMode === 'preview') {
         setViewMode('split');
@@ -681,6 +689,7 @@ export default function App() {
         if (activeFileId === fileId) {
           if (remaining.length > 0) {
             setActiveFileId(remaining[0].id);
+            setFileResetToken(t => t + 1);
           } else {
             const fallbackId = `file-${Date.now()}`;
             const fallbackDoc = {
@@ -692,6 +701,7 @@ export default function App() {
             };
             setFiles([fallbackDoc]);
             setActiveFileId(fallbackId);
+            setFileResetToken(t => t + 1);
           }
         }
         closeConfirmModal();
@@ -717,6 +727,7 @@ export default function App() {
         setActiveFileId(existing.id);
         setActiveTool('markdown');
         setHasPlaygroundEdits(false);
+        setFileResetToken(t => t + 1);
         showInAppAlert(`Replaced "${formattedName}" with imported version.`, 'File Replaced', 'info');
       } else if (!existing) {
         const id = `file-${Date.now()}`;
@@ -735,6 +746,7 @@ export default function App() {
         setActiveFileId(id);
         setActiveTool('markdown');
         setHasPlaygroundEdits(false);
+        setFileResetToken(t => t + 1);
       }
     };
 
@@ -828,6 +840,7 @@ export default function App() {
         setFiles(prev => [newDoc, ...prev]);
         setActiveFileId(newDoc.id);
       }
+      setFileResetToken(t => t + 1);
     };
 
     if (hasPlaygroundEdits) {
@@ -1419,6 +1432,7 @@ export default function App() {
 
       if (firstActiveId) {
         setActiveFileId(firstActiveId);
+        setFileResetToken(t => t + 1);
       }
       setActiveTool('markdown');
       setHasPlaygroundEdits(false);
@@ -1850,6 +1864,8 @@ export default function App() {
                 {/* Editor Pane (when Split or Editor mode) */}
                 {!isFullscreen && (viewMode === 'split' || viewMode === 'editor') && (
                   <MarkdownEditor 
+                    fileId={activeFile.id}
+                    fileResetToken={fileResetToken}
                     content={content}
                     onChange={handleContentChange}
                     onDropFile={handleOpenFile}
@@ -1860,6 +1876,8 @@ export default function App() {
                 {/* Preview / Playground Pane (when Split, Preview, or Playground mode or Fullscreen) */}
                 {(isFullscreen || viewMode === 'split' || viewMode === 'preview' || viewMode === 'playground') && (
                   <MarkdownViewer 
+                    fileId={activeFile.id}
+                    fileResetToken={fileResetToken}
                     html={html}
                     fileName={fileName}
                     theme={theme}

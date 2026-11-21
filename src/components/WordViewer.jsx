@@ -70,10 +70,18 @@ export default function WordViewer({
   const historyIndexRef = useRef(-1);
 
   const paperRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const fileInputRef = useRef(null);
   const savedRangeRef = useRef(null);
   const autoSaveTimerRef = useRef(null);
   const inputDebounceTimerRef = useRef(null);
+
+  // Reset scroll to top when opening a new Word document
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [fileName]);
 
   // Calculate word count and reading time
   const plainText = (activeHtml || '').replace(/<[^>]+>/g, ' ');
@@ -745,7 +753,10 @@ export default function WordViewer({
       )}
 
       {/* Document Workspace */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center items-start custom-scrollbar">
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center items-start custom-scrollbar"
+      >
         <article
           id="preview-paper"
           ref={paperRef}

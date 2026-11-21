@@ -736,6 +736,8 @@ export function sanitizePlaygroundHtml(html) {
 }
 
 export default function MarkdownViewer({
+  fileId,
+  fileResetToken,
   html,
   theme,
   setTheme,
@@ -753,6 +755,7 @@ export default function MarkdownViewer({
   fileName = 'Document.md',
   onPlaygroundEditsChange
 }) {
+  const previewContainerRef = useRef(null);
   const containerRef = useRef(null);
   const paperRef = useRef(null);
   const [fontSize, setFontSize] = useState(16); // px
@@ -779,6 +782,49 @@ export default function MarkdownViewer({
 
   // Storage key for saving Playground edits per file
   const storageKey = `md_playground_saved_${fileName}`;
+
+  // When opening or switching to another markdown file, reset scroll position so the user starts at the top by default
+  useEffect(() => {
+    // 1. Remove active focus or selection inside the preview to prevent the browser
+    // from scrolling back down to a previously focused/selected element in the previous file
+    if (document.activeElement && previewContainerRef.current?.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+    if (window.getSelection) {
+      try {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && previewContainerRef.current?.contains(sel.anchorNode)) {
+          sel.removeAllRanges();
+        }
+      } catch (e) {}
+    }
+
+    const resetScrollToTop = () => {
+      if (previewContainerRef.current) {
+        previewContainerRef.current.scrollTop = 0;
+      }
+      const el = document.getElementById('preview-container');
+      if (el) {
+        el.scrollTop = 0;
+      }
+    };
+
+    resetScrollToTop();
+    const rafId = requestAnimationFrame(resetScrollToTop);
+    const timeoutId1 = setTimeout(resetScrollToTop, 50);
+    const timeoutId2 = setTimeout(resetScrollToTop, 150);
+
+    // Reset temporary UI states for previous document
+    setSelectionBox({ top: 0, left: 0, visible: false });
+    setCommentPopover(prev => ({ ...prev, isOpen: false }));
+    setHasEdits(false);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+    };
+  }, [fileId, fileName, fileResetToken]);
 
   // Active HTML for playground: loads saved draft if available, sanitizing legacy glitches
   const displayHtml = useMemo(() => {
@@ -919,7 +965,7 @@ export default function MarkdownViewer({
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [resetKey, html]);
+  }, [resetKey, html, fileId, fileName]);
 
   // Core Save Playground Draft
   const handleSavePlayground = useCallback((showIndicator = true) => {
@@ -1439,6 +1485,9 @@ export default function MarkdownViewer({
     setSelectionBox({ top: 0, left: 0, visible: false });
     setCommentPopover(prev => ({ ...prev, isOpen: false }));
     setShowResetModal(false);
+    if (previewContainerRef.current) {
+      previewContainerRef.current.scrollTop = 0;
+    }
   };
 
   // Auto-save and emergency flush on beforeunload
@@ -1826,6 +1875,7 @@ export default function MarkdownViewer({
   return (
     <div 
       id="preview-container"
+      ref={previewContainerRef}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={`relative flex-1 h-[calc(100vh-4rem)] overflow-y-auto overflow-x-hidden transition-all duration-200 theme-${theme} ${
